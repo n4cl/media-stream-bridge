@@ -66,24 +66,12 @@ Firefoxで閲覧中のページが利用するストリーム配信を検出し�
 - Firefox拡張から任意のffmpeg引数を渡さず、URL、ファイル名、画質など必要な項目だけを渡す
 - URL単体で取得できない場合は、認証情報を自動的に探索または転送せず、取得できなかったことを表示する
 
-## 構成案
+## 基本構成
 
-```text
-動画ページ
-    |
-    v
-Firefox拡張
-    |
-    v
-ローカル処理
-    |
-    v
-ffmpeg --> ファイル保存
-```
-
-構成や技術選択は現時点の仮説であり、実装と検証で得られた事実に応じて決定する。
+コンポーネントの境界と責務は [`docs/design/architecture.md`](docs/design/architecture.md) に記載する。設計は現時点の仮説であり、実装と検証で得られた事実に応じて見直す。
 
 ## ドキュメント
 
 - [`docs/development.md`](docs/development.md): 開発時の判断と検証の方針
+- [`docs/design/architecture.md`](docs/design/architecture.md): 初期実装のコンポーネント境界と責務
 - 設計、契約、重要な判断は、必要になった時点で `docs/` 以下へ追加する
