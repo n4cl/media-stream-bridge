@@ -1,0 +1,21 @@
+{
+  "name": "media-stream-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.19.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "format": "biome format --write .",
+    "lint": "biome lint . && web-ext lint --source-dir extension",
+    "test": "node --test",
+    "check": "biome ci . && web-ext lint --source-dir extension && node --test",
+    "start:firefox": "web-ext run --source-dir extension"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.10",
+    "web-ext": "10.6.0"
+  }
+}
