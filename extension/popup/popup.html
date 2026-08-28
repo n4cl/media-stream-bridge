@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Media Stream Bridge</title>
+    <link rel="stylesheet" href="popup.css">
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>検出したストリーム</h1>
+      <p id="status" role="status">候補を確認しています…</p>
+      <form id="candidate-form" hidden>
+        <fieldset>
+          <legend>保存するストリームを選択</legend>
+          <div id="candidate-list"></div>
+        </fieldset>
+      </form>
+    </main>
+  </body>
+</html>
