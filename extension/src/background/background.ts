@@ -1,3 +1,7 @@
+import {
+  isNativeHostResponse,
+  NATIVE_MESSAGE_VERSION,
+} from "../../../contracts/native-messages.js";
 import { CandidateStore, isHlsPlaylistUrl } from "../shared/candidates.js";
 import {
   isListCandidatesMessage,
@@ -5,7 +9,6 @@ import {
   type ListCandidatesResponse,
   type SaveCandidateResponse,
 } from "../shared/messages.js";
-import { isNativeHostResponse, NATIVE_MESSAGE_VERSION } from "../shared/native-messages.js";
 
 const candidates = new CandidateStore();
 const NATIVE_HOST_NAME = "com.media_stream_bridge";

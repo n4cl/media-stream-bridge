@@ -9,7 +9,7 @@
   },
   "scripts": {
     "clean": "node scripts/clean.mjs",
-    "build": "npm run clean && tsc --project tsconfig.json && tsc --project tsconfig.native-host.json",
+    "build": "npm run clean && tsc --project extension/tsconfig.json && tsc --project native-host/tsconfig.json",
     "format": "biome format --write .",
     "lint": "biome lint . && npm run build && web-ext lint --source-dir extension",
     "test": "npm run build && node --test",

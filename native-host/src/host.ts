@@ -2,10 +2,7 @@ import { isAbsolute } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import {
-  isSaveStreamRequest,
-  NATIVE_MESSAGE_VERSION,
-} from "../extension/shared/native-messages.js";
+import { isSaveStreamRequest, NATIVE_MESSAGE_VERSION } from "../../contracts/native-messages.js";
 import { readNativeMessage, writeNativeMessage } from "./framing.js";
 import {
   createDefaultDependencies,

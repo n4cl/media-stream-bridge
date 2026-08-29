@@ -1,5 +1,8 @@
+import {
+  isNativeHostResponse,
+  type NativeHostResponse,
+} from "../../../contracts/native-messages.js";
 import type { Candidate } from "./candidates.js";
-import { isNativeHostResponse, type NativeHostResponse } from "./native-messages.js";
 
 export interface ListCandidatesMessage {
   type: "candidates:list";

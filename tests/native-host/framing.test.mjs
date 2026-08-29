@@ -5,7 +5,7 @@ import test from "node:test";
 import {
   readNativeMessage,
   writeNativeMessage,
-} from "../../native-host/generated/native-host/framing.js";
+} from "../../native-host/build/native-host/src/framing.js";
 
 test("Native Messagingはlittle-endianの32-bit長さprefixとUTF-8 JSONで送受信する", async () => {
   const output = new PassThrough();

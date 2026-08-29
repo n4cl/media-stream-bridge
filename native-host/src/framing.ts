@@ -8,7 +8,7 @@ const HEADER_BYTES = 4;
 const MAX_INPUT_BYTES = 64 * 1024;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
-// Firefox specifies native byte order, so use the runtime architecture's byte order.
+// Firefox specifies native byte order, so read it from the runtime architecture.
 const NATIVE_ENDIANNESS = endianness();
 
 function readLength(header: Buffer): number {

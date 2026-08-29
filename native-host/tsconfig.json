@@ -5,13 +5,13 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2022"],
     "types": ["node"],
-    "rootDir": "src",
-    "outDir": "native-host/generated",
+    "rootDir": "..",
+    "outDir": "build",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noEmitOnError": true,
     "skipLibCheck": true
   },
-  "include": ["src/native-host/**/*.ts", "src/extension/shared/native-messages.ts"]
+  "include": ["src/**/*.ts", "../contracts/**/*.ts"]
 }

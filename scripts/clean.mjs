@@ -1,11 +1,11 @@
 import { rm } from "node:fs/promises";
 
-await rm(new URL("../extension/generated", import.meta.url), {
+await rm(new URL("../extension/build", import.meta.url), {
   recursive: true,
   force: true,
 });
 
-await rm(new URL("../native-host/generated", import.meta.url), {
+await rm(new URL("../native-host/build", import.meta.url), {
   recursive: true,
   force: true,
 });

@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   isListCandidatesMessage,
   isListCandidatesResponse,
-} from "../../extension/generated/shared/messages.js";
+} from "../../extension/build/extension/src/shared/messages.js";
 
 test("候補一覧メッセージを種別で判定し、tabIdの検証は受信側に委ねる", () => {
   assert.equal(isListCandidatesMessage({ type: "candidates:list", tabId: 1 }), true);

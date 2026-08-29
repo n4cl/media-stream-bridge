@@ -5,7 +5,7 @@ import {
   isNativeHostResponse,
   isSaveStreamRequest,
   NATIVE_MESSAGE_VERSION,
-} from "../../extension/generated/shared/native-messages.js";
+} from "../../extension/build/contracts/native-messages.js";
 
 test("Native Host契約はバージョン付きの保存開始要求だけを受け入れる", () => {
   assert.equal(

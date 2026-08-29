@@ -6,7 +6,7 @@ import {
   createFfmpegSpawner,
   isAllowedHlsUrl,
   startSaveStream,
-} from "../../native-host/generated/native-host/save-stream.js";
+} from "../../native-host/build/native-host/src/save-stream.js";
 
 test("HostはHTTP(S) HLS URLだけを許可する", () => {
   assert.equal(isAllowedHlsUrl("https://example.com/master.m3u8?token=secret"), true);

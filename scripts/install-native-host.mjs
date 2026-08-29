@@ -8,11 +8,11 @@ import {
   createNativeHostLauncher,
   createNativeHostManifest,
   resolveFfmpegPath,
-} from "../native-host/generated/native-host/installation.js";
+} from "../native-host/build/native-host/src/installation.js";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const template = join(repositoryRoot, "native-host", "com.media_stream_bridge.json.template");
-const hostModule = join(repositoryRoot, "native-host", "generated", "native-host", "host.js");
+const hostModule = join(repositoryRoot, "native-host", "build", "native-host", "src", "host.js");
 const applicationSupport = join(homedir(), "Library", "Application Support", "Media Stream Bridge");
 const launcher = join(applicationSupport, "native-host-launcher.sh");
 const destination = join(
