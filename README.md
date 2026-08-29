@@ -72,6 +72,7 @@ Firefoxで閲覧中のページが利用するストリーム配信を検出し�
 
 ## ドキュメント
 
+- [`docs/roadmap.md`](docs/roadmap.md): 初期版完成までの到達点と現在地
 - [`docs/development.md`](docs/development.md): 開発時の判断と検証の方針
 - [`docs/design/architecture.md`](docs/design/architecture.md): 初期実装のコンポーネント境界と責務
 - 設計、契約、重要な判断は、必要になった時点で `docs/` 以下へ追加する
