@@ -6,7 +6,7 @@ Firefoxで閲覧中のページが利用するストリーム配信を検出し�
 
 ## ステータス
 
-初期実装段階。現在は、閲覧中のタブが利用するHLSストリームの検出とPopupでの候補表示まで実装している。ローカルへの保存はまだ実装していない。
+初期実装段階。閲覧中のタブで利用するHLSストリームを検出し、PopupからmacOSのNative Hostを通じて固定設定で保存できる最小経路を実装している。進捗、キャンセル、保存設定は未実装である。
 
 ## 解決したい問題
 
@@ -69,6 +69,17 @@ Firefoxで閲覧中のページが利用するストリーム配信を検出し�
 ## 基本構成
 
 コンポーネントの境界と責務は [`docs/design/architecture.md`](docs/design/architecture.md) に記載する。設計は現時点の仮説であり、実装と検証で得られた事実に応じて見直す。
+
+## macOS Native Host の開発用登録
+
+Node.js と `ffmpeg` を利用可能にしたうえで、リポジトリのルートでビルドしてから登録する。
+
+```sh
+npm run build
+node scripts/install-native-host.mjs
+```
+
+このスクリプトは `~/Library/Application Support/Mozilla/NativeMessagingHosts/` に、固定した拡張IDだけを許可する manifest を作成する。あわせて `~/Library/Application Support/Media Stream Bridge/` に、実行時の `PATH` に依存しないNode.jsとffmpegの絶対パスを固定したランチャーを生成する。Host は `~/Movies/Media Stream Bridge/` に、ランダムID付きの `.mp4` として保存する。既存ファイルの上書きはしない。登録後は拡張機能を再読み込みする。
 
 ## ドキュメント
 

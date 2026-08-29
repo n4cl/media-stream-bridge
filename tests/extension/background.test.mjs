@@ -5,6 +5,10 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   let observeRequest;
   let removeTab;
   let receiveMessage;
+  let connectNative;
+  let nativeMessage;
+  let nativeDisconnect;
+  let postedNativeMessage;
 
   globalThis.browser = {
     webRequest: {
@@ -27,6 +31,27 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
         addListener(listener) {
           receiveMessage = listener;
         },
+      },
+      connectNative(name) {
+        connectNative = name;
+        return {
+          onMessage: {
+            addListener(listener) {
+              nativeMessage = listener;
+            },
+          },
+          onDisconnect: {
+            addListener(listener) {
+              nativeDisconnect = listener;
+            },
+          },
+          postMessage(message) {
+            postedNativeMessage = message;
+          },
+          disconnect() {
+            nativeDisconnect();
+          },
+        };
       },
     },
   };
@@ -52,4 +77,29 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     ok: true,
     candidates: [],
   });
+
+  const saving = receiveMessage({ type: "save:start", hlsUrl: "https://example.com/master.m3u8" });
+  assert.equal(connectNative, "com.media_stream_bridge");
+  assert.deepEqual(postedNativeMessage, {
+    version: 1,
+    type: "save:start",
+    hlsUrl: "https://example.com/master.m3u8",
+  });
+  nativeMessage({ version: 1, type: "save:started", saveId: "save-1" });
+  nativeMessage({
+    version: 1,
+    type: "save:completed",
+    saveId: "save-1",
+    outputFile: "/tmp/saved.mp4",
+  });
+  assert.deepEqual(await saving, {
+    ok: true,
+    response: {
+      version: 1,
+      type: "save:completed",
+      saveId: "save-1",
+      outputFile: "/tmp/saved.mp4",
+    },
+  });
+  assert.equal(typeof nativeDisconnect, "function");
 });

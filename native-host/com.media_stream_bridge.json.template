@@ -1,0 +1,7 @@
+{
+  "name": "com.media_stream_bridge",
+  "description": "Media Stream Bridge Native Host",
+  "path": "__NATIVE_HOST_LAUNCHER__",
+  "type": "stdio",
+  "allowed_extensions": ["media-stream-bridge@example.com"]
+}

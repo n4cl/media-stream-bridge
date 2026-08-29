@@ -9,7 +9,7 @@
   },
   "scripts": {
     "clean": "node scripts/clean.mjs",
-    "build": "npm run clean && tsc --project tsconfig.json",
+    "build": "npm run clean && tsc --project tsconfig.json && tsc --project tsconfig.native-host.json",
     "format": "biome format --write .",
     "lint": "biome lint . && npm run build && web-ext lint --source-dir extension",
     "test": "npm run build && node --test",
@@ -19,6 +19,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
     "@types/firefox-webext-browser": "143.0.0",
+    "@types/node": "26.4.0",
     "typescript": "7.0.2",
     "web-ext": "10.6.0"
   }

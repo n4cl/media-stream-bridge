@@ -1,7 +1,50 @@
 import { CandidateStore, isHlsPlaylistUrl } from "../shared/candidates.js";
-import { isListCandidatesMessage, type ListCandidatesResponse } from "../shared/messages.js";
+import {
+  isListCandidatesMessage,
+  isSaveCandidateMessage,
+  type ListCandidatesResponse,
+  type SaveCandidateResponse,
+} from "../shared/messages.js";
+import { isNativeHostResponse, NATIVE_MESSAGE_VERSION } from "../shared/native-messages.js";
 
 const candidates = new CandidateStore();
+const NATIVE_HOST_NAME = "com.media_stream_bridge";
+
+function saveWithNativeHost(hlsUrl: string): Promise<SaveCandidateResponse> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (response: SaveCandidateResponse): void => {
+      if (!settled) {
+        settled = true;
+        resolve(response);
+      }
+    };
+    let port: browser.runtime.Port;
+    try {
+      port = browser.runtime.connectNative(NATIVE_HOST_NAME);
+    } catch {
+      settle({ ok: false, error: "native-host-unavailable" });
+      return;
+    }
+
+    port.onMessage.addListener((message: unknown) => {
+      if (!isNativeHostResponse(message)) {
+        settle({ ok: false, error: "native-host-invalid-response" });
+        port.disconnect();
+        return;
+      }
+      if (message.type === "save:started") {
+        return;
+      }
+      settle({ ok: true, response: message });
+      port.disconnect();
+    });
+    port.onDisconnect.addListener(() => {
+      settle({ ok: false, error: "native-host-unavailable" });
+    });
+    port.postMessage({ version: NATIVE_MESSAGE_VERSION, type: "save:start", hlsUrl });
+  });
+}
 
 browser.webRequest.onBeforeRequest.addListener(
   (request) => {
@@ -19,6 +62,14 @@ browser.tabs.onRemoved.addListener((tabId) => {
 });
 
 browser.runtime.onMessage.addListener((message: unknown) => {
+  if (isSaveCandidateMessage(message)) {
+    if (typeof message.hlsUrl !== "string" || !isHlsPlaylistUrl(message.hlsUrl)) {
+      const response: SaveCandidateResponse = { ok: false, error: "invalid-hls-url" };
+      return Promise.resolve(response);
+    }
+    return saveWithNativeHost(message.hlsUrl);
+  }
+
   if (!isListCandidatesMessage(message)) {
     return undefined;
   }
