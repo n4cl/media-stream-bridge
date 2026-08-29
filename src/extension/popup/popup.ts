@@ -1,8 +1,18 @@
-const status = document.querySelector("#status");
-const form = document.querySelector("#candidate-form");
-const list = document.querySelector("#candidate-list");
+import { isListCandidatesResponse, type ListCandidatesMessage } from "../shared/messages.js";
 
-function renderCandidates(candidates) {
+function requireElement<T extends Element>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) {
+    throw new Error(`Element not found: ${selector}`);
+  }
+  return element;
+}
+
+const status = requireElement<HTMLParagraphElement>("#status");
+const form = requireElement<HTMLFormElement>("#candidate-form");
+const list = requireElement<HTMLDivElement>("#candidate-list");
+
+function renderCandidates(candidates: Array<{ url: string }>): void {
   status.hidden = true;
   form.hidden = false;
 
@@ -28,20 +38,22 @@ function renderCandidates(candidates) {
   }
 }
 
-async function loadCandidates() {
+async function loadCandidates(): Promise<void> {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!Number.isInteger(tab?.id)) {
+    const tabId = tab?.id;
+    if (typeof tabId !== "number" || !Number.isInteger(tabId)) {
       status.textContent = "現在のタブを確認できませんでした。";
       return;
     }
 
-    const response = await browser.runtime.sendMessage({
+    const message: ListCandidatesMessage = {
       type: "candidates:list",
-      tabId: tab.id,
-    });
+      tabId,
+    };
+    const response: unknown = await browser.runtime.sendMessage(message);
 
-    if (!response?.ok) {
+    if (!isListCandidatesResponse(response) || !response.ok) {
       status.textContent = "候補を取得できませんでした。";
       return;
     }

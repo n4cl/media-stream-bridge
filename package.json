@@ -8,14 +8,18 @@
     "node": ">=20"
   },
   "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && tsc --project tsconfig.json",
     "format": "biome format --write .",
-    "lint": "biome lint . && web-ext lint --source-dir extension",
-    "test": "node --test",
-    "check": "biome ci . && web-ext lint --source-dir extension && node --test",
-    "start:firefox": "web-ext run --source-dir extension"
+    "lint": "biome lint . && npm run build && web-ext lint --source-dir extension",
+    "test": "npm run build && node --test",
+    "check": "biome ci . && npm run build && web-ext lint --source-dir extension && node --test",
+    "start:firefox": "npm run build && web-ext run --source-dir extension"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
+    "@types/firefox-webext-browser": "143.0.0",
+    "typescript": "7.0.2",
     "web-ext": "10.6.0"
   }
 }

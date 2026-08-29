@@ -1,6 +1,11 @@
 const DEFAULT_MAX_CANDIDATES_PER_TAB = 100;
 
-export function isHlsPlaylistUrl(value) {
+export interface Candidate {
+  url: string;
+  detectedAt: number;
+}
+
+export function isHlsPlaylistUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return url.pathname.toLowerCase().endsWith(".m3u8");
@@ -10,16 +15,15 @@ export function isHlsPlaylistUrl(value) {
 }
 
 export class CandidateStore {
-  constructor(maxCandidatesPerTab = DEFAULT_MAX_CANDIDATES_PER_TAB) {
+  private readonly candidatesByTab = new Map<number, Map<string, Candidate>>();
+
+  constructor(private readonly maxCandidatesPerTab = DEFAULT_MAX_CANDIDATES_PER_TAB) {
     if (!Number.isInteger(maxCandidatesPerTab) || maxCandidatesPerTab < 1) {
       throw new RangeError("maxCandidatesPerTab must be a positive integer");
     }
-
-    this.maxCandidatesPerTab = maxCandidatesPerTab;
-    this.candidatesByTab = new Map();
   }
 
-  add(tabId, url, detectedAt = Date.now()) {
+  add(tabId: number, url: string, detectedAt = Date.now()): void {
     let candidates = this.candidatesByTab.get(tabId);
     if (!candidates) {
       candidates = new Map();
@@ -34,17 +38,19 @@ export class CandidateStore {
 
     if (candidates.size >= this.maxCandidatesPerTab) {
       const oldestUrl = candidates.keys().next().value;
-      candidates.delete(oldestUrl);
+      if (oldestUrl !== undefined) {
+        candidates.delete(oldestUrl);
+      }
     }
 
     candidates.set(url, { url, detectedAt });
   }
 
-  list(tabId) {
+  list(tabId: number): Candidate[] {
     return Array.from(this.candidatesByTab.get(tabId)?.values() ?? []);
   }
 
-  deleteTab(tabId) {
+  deleteTab(tabId: number): void {
     this.candidatesByTab.delete(tabId);
   }
 }

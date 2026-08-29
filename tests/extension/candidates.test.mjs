@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CandidateStore, isHlsPlaylistUrl } from "../../extension/shared/candidates.mjs";
+import { CandidateStore, isHlsPlaylistUrl } from "../../extension/generated/shared/candidates.js";
 
 test("m3u8で終わるURLをHLS候補として判定する", () => {
   assert.equal(isHlsPlaylistUrl("https://example.com/video/master.m3u8"), true);
