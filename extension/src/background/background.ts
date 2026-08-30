@@ -87,6 +87,7 @@ function saveWithNativeHost(
           return;
         }
         attempt.status = { state: "running", saveId: message.saveId };
+        settle({ ok: true, response: message });
         return;
       }
       if (message.type === "save:completed") {

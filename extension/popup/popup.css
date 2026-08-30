@@ -21,6 +21,11 @@ p {
   margin: 0;
 }
 
+#status:not([hidden]) {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+
 fieldset {
   border: 0;
   margin: 0;

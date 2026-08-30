@@ -1,9 +1,18 @@
 import {
   isListCandidatesResponse,
   isSaveCandidateResponse,
+  isSaveStatusResponse,
   type ListCandidatesMessage,
   type SaveCandidateMessage,
+  type SaveJobStatus,
+  type SaveStatusMessage,
 } from "../shared/messages.js";
+import {
+  isActiveSaveJob,
+  SaveStatusPoller,
+  saveJobStatusText,
+  type TimerScheduler,
+} from "./save-status.js";
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -13,13 +22,51 @@ function requireElement<T extends Element>(selector: string): T {
   return element;
 }
 
+const candidateStatus = requireElement<HTMLParagraphElement>("#candidate-status");
 const status = requireElement<HTMLParagraphElement>("#status");
 const form = requireElement<HTMLFormElement>("#candidate-form");
 const list = requireElement<HTMLDivElement>("#candidate-list");
 const saveButton = requireElement<HTMLButtonElement>("#save-button");
+const scheduler: TimerScheduler = {
+  setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
+  clearTimeout: (timerId) => window.clearTimeout(timerId),
+};
+
+let currentTabId: number | undefined;
+
+function renderSaveStatus(job: SaveJobStatus | null): void {
+  const text = saveJobStatusText(job);
+  status.hidden = text === null;
+  if (text !== null) {
+    status.textContent = text;
+  }
+  saveButton.disabled = isActiveSaveJob(job);
+}
+
+async function requestSaveStatus(): Promise<SaveJobStatus | null> {
+  if (currentTabId === undefined) {
+    throw new Error("Current tab is unavailable");
+  }
+  const message: SaveStatusMessage = { type: "save:status", tabId: currentTabId };
+  const response: unknown = await browser.runtime.sendMessage(message);
+  if (!isSaveStatusResponse(response) || !response.ok) {
+    throw new Error("Save status is unavailable");
+  }
+  return response.job;
+}
+
+const statusPoller = new SaveStatusPoller(
+  requestSaveStatus,
+  renderSaveStatus,
+  () => {
+    status.hidden = false;
+    status.textContent = "保存状態を確認できませんでした。";
+  },
+  scheduler,
+);
 
 function renderCandidates(candidates: Array<{ url: string }>): void {
-  status.hidden = true;
+  list.replaceChildren();
   form.hidden = false;
 
   for (const [index, candidate] of candidates.entries()) {
@@ -44,35 +91,45 @@ function renderCandidates(candidates: Array<{ url: string }>): void {
   }
 }
 
-async function loadCandidates(): Promise<void> {
-  try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    const tabId = tab?.id;
-    if (typeof tabId !== "number" || !Number.isInteger(tabId)) {
-      status.textContent = "現在のタブを確認できませんでした。";
-      return;
-    }
+async function resolveCurrentTabId(): Promise<number | undefined> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  return typeof tab?.id === "number" && Number.isInteger(tab.id) ? tab.id : undefined;
+}
 
-    const message: ListCandidatesMessage = {
-      type: "candidates:list",
-      tabId,
-    };
+async function loadCandidates(tabId: number): Promise<void> {
+  try {
+    const message: ListCandidatesMessage = { type: "candidates:list", tabId };
     const response: unknown = await browser.runtime.sendMessage(message);
 
     if (!isListCandidatesResponse(response) || !response.ok) {
-      status.textContent = "候補を取得できませんでした。";
+      candidateStatus.textContent = "候補を取得できませんでした。";
       return;
     }
 
     if (response.candidates.length === 0) {
-      status.textContent = "このタブではHLSストリームを検出していません。";
+      candidateStatus.textContent = "このタブではHLSストリームを検出していません。";
       return;
     }
 
+    candidateStatus.hidden = true;
     renderCandidates(response.candidates);
   } catch {
-    status.textContent = "候補の取得中にエラーが発生しました。";
+    candidateStatus.textContent = "候補の取得中にエラーが発生しました。";
   }
+}
+
+async function initialize(): Promise<void> {
+  try {
+    currentTabId = await resolveCurrentTabId();
+  } catch {
+    currentTabId = undefined;
+  }
+  if (currentTabId === undefined) {
+    candidateStatus.textContent = "現在のタブを確認できませんでした。";
+    return;
+  }
+  statusPoller.start();
+  await loadCandidates(currentTabId);
 }
 
 form.addEventListener("submit", async (event) => {
@@ -84,32 +141,55 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  if (currentTabId === undefined) {
+    status.hidden = false;
+    status.textContent = "現在のタブを確認できませんでした。";
+    return;
+  }
+
   saveButton.disabled = true;
   status.hidden = false;
-  status.textContent = "保存しています…";
+  status.textContent = "保存を開始しています…";
+  let keepSaveDisabled = false;
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    const tabId = tab?.id;
-    if (typeof tabId !== "number" || !Number.isInteger(tabId)) {
-      status.textContent = "現在のタブを確認できませんでした。";
-      return;
-    }
-    const message: SaveCandidateMessage = { type: "save:start", tabId, hlsUrl: selected };
+    const message: SaveCandidateMessage = {
+      type: "save:start",
+      tabId: currentTabId,
+      hlsUrl: selected,
+    };
     const response: unknown = await browser.runtime.sendMessage(message);
     if (!isSaveCandidateResponse(response)) {
       status.textContent = "保存結果を確認できませんでした。";
+    } else if (!response.ok && response.error === "save-already-running") {
+      status.textContent = "既に保存中です。";
+      keepSaveDisabled = true;
+      statusPoller.start();
     } else if (!response.ok) {
       status.textContent = "保存を開始できませんでした。Native Host の設定を確認してください。";
+    } else if (response.response.type === "save:started") {
+      renderSaveStatus({ state: "running", saveId: response.response.saveId });
+      keepSaveDisabled = true;
+      statusPoller.start();
     } else if (response.response.type === "save:completed") {
-      status.textContent = `保存しました: ${response.response.outputFile}`;
+      renderSaveStatus({
+        state: "completed",
+        saveId: response.response.saveId,
+        outputFile: response.response.outputFile,
+      });
     } else {
-      status.textContent = "保存に失敗しました。";
+      renderSaveStatus({ state: "failed", error: response.response.code });
     }
   } catch {
     status.textContent = "保存中にエラーが発生しました。";
   } finally {
-    saveButton.disabled = false;
+    if (!keepSaveDisabled) {
+      saveButton.disabled = false;
+    }
   }
 });
 
-void loadCandidates();
+window.addEventListener("pagehide", () => {
+  statusPoller.stop();
+});
+
+void initialize();

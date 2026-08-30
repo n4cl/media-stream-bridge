@@ -46,7 +46,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
       connectNative(name) {
         connectNative = name;
         nativeConnectionCount += 1;
-        const nativePort = {};
+        const nativePort = { disconnectCalls: 0 };
         nativePorts.push(nativePort);
         return {
           onMessage: {
@@ -69,7 +69,9 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
               throw new Error("native port is unavailable");
             }
           },
-          disconnect() {},
+          disconnect() {
+            nativePort.disconnectCalls += 1;
+          },
         };
       },
     },
@@ -152,6 +154,11 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   });
   commitNavigation({ tabId: 7, frameId: 0, url: "https://example.com/after-save" });
   nativeMessage({ version: 1, type: "save:started", saveId: "save-1" });
+  assert.deepEqual(await saving, {
+    ok: true,
+    response: { version: 1, type: "save:started", saveId: "save-1" },
+  });
+  assert.equal(nativePorts[0].disconnectCalls, 0);
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 7 }), {
     ok: true,
     job: { state: "running", saveId: "save-1" },
@@ -171,15 +178,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     saveId: "save-1",
     outputFile: "/tmp/saved.mp4",
   });
-  assert.deepEqual(await saving, {
-    ok: true,
-    response: {
-      version: 1,
-      type: "save:completed",
-      saveId: "save-1",
-      outputFile: "/tmp/saved.mp4",
-    },
-  });
+  assert.equal(nativePorts[0].disconnectCalls, 1);
   assert.equal(typeof nativeDisconnect, "function");
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 7 }), {
     ok: true,
@@ -197,13 +196,16 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/disconnected.m3u8",
   });
   nativeMessage({ version: 1, type: "save:started", saveId: "save-2" });
+  assert.deepEqual(await disconnectedSave, {
+    ok: true,
+    response: { version: 1, type: "save:started", saveId: "save-2" },
+  });
   removeTab(8);
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 8 }), {
     ok: true,
     job: { state: "running", saveId: "save-2" },
   });
   nativeDisconnect();
-  assert.deepEqual(await disconnectedSave, { ok: false, error: "native-host-unavailable" });
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 8 }), {
     ok: true,
     job: { state: "failed", error: "native-host-unavailable", saveId: "save-2" },
@@ -232,15 +234,15 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/mismatched-save-id.m3u8",
   });
   nativeMessage({ version: 1, type: "save:started", saveId: "save-4" });
+  assert.deepEqual(await mismatchedCompletionSave, {
+    ok: true,
+    response: { version: 1, type: "save:started", saveId: "save-4" },
+  });
   nativeMessage({
     version: 1,
     type: "save:completed",
     saveId: "other-save",
     outputFile: "/tmp/mismatched.mp4",
-  });
-  assert.deepEqual(await mismatchedCompletionSave, {
-    ok: false,
-    error: "native-host-invalid-response",
   });
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 10 }), {
     ok: true,
