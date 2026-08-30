@@ -88,7 +88,13 @@ form.addEventListener("submit", async (event) => {
   status.hidden = false;
   status.textContent = "保存しています…";
   try {
-    const message: SaveCandidateMessage = { type: "save:start", hlsUrl: selected };
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const tabId = tab?.id;
+    if (typeof tabId !== "number" || !Number.isInteger(tabId)) {
+      status.textContent = "現在のタブを確認できませんでした。";
+      return;
+    }
+    const message: SaveCandidateMessage = { type: "save:start", tabId, hlsUrl: selected };
     const response: unknown = await browser.runtime.sendMessage(message);
     if (!isSaveCandidateResponse(response)) {
       status.textContent = "保存結果を確認できませんでした。";
