@@ -14,7 +14,7 @@
     "lint": "biome lint . && npm run build && web-ext lint --source-dir extension",
     "test": "npm run build && node --test",
     "check": "biome ci . && npm run build && web-ext lint --source-dir extension && node --test",
-    "start:firefox": "npm run build && web-ext run --source-dir extension"
+    "start:firefox": "npm run build && web-ext run --source-dir extension --firefox '/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox'"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",

@@ -81,6 +81,14 @@ node scripts/install-native-host.mjs
 
 このスクリプトは `~/Library/Application Support/Mozilla/NativeMessagingHosts/` に、固定した拡張IDだけを許可する manifest を作成する。あわせて `~/Library/Application Support/Media Stream Bridge/` に、実行時の `PATH` に依存しないNode.jsとffmpegの絶対パスを固定したランチャーを生成する。Host は `~/Movies/Media Stream Bridge/` に、ランダムID付きの `.mp4` として保存する。既存ファイルの上書きはしない。登録後は拡張機能を再読み込みする。
 
+## Firefox 開発起動
+
+```sh
+npm run start:firefox
+```
+
+このコマンドは Firefox Developer Edition を明示的に使用し、`web-ext` が作成する一時プロファイルへ拡張を読み込む。通常利用の Firefox アプリケーションとプロファイルは使わない。
+
 ## ドキュメント
 
 - [`docs/roadmap.md`](docs/roadmap.md): 初期版完成までの到達点と現在地
