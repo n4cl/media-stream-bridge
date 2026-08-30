@@ -40,11 +40,11 @@ test("上限を超えた場合は最も古く追加した候補を除く", () =>
   ]);
 });
 
-test("タブを閉じた場合は候補を削除する", () => {
+test("タブの候補をまとめて削除する", () => {
   const store = new CandidateStore();
   store.add(1, "https://example.com/one.m3u8");
 
-  store.deleteTab(1);
+  store.clearTab(1);
 
   assert.deepEqual(store.list(1), []);
 });

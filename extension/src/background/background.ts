@@ -60,8 +60,14 @@ browser.webRequest.onBeforeRequest.addListener(
   { urls: ["<all_urls>"] },
 );
 
+browser.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId === 0) {
+    candidates.clearTab(details.tabId);
+  }
+});
+
 browser.tabs.onRemoved.addListener((tabId) => {
-  candidates.deleteTab(tabId);
+  candidates.clearTab(tabId);
 });
 
 browser.runtime.onMessage.addListener((message: unknown) => {

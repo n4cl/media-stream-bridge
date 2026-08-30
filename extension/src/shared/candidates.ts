@@ -50,7 +50,7 @@ export class CandidateStore {
     return Array.from(this.candidatesByTab.get(tabId)?.values() ?? []);
   }
 
-  deleteTab(tabId: number): void {
+  clearTab(tabId: number): void {
     this.candidatesByTab.delete(tabId);
   }
 }

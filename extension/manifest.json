@@ -3,7 +3,7 @@
   "name": "Media Stream Bridge",
   "version": "0.1.0",
   "description": "閲覧中のタブが利用するHLSストリームを検出します。",
-  "permissions": ["webRequest", "nativeMessaging", "<all_urls>"],
+  "permissions": ["webRequest", "webNavigation", "nativeMessaging", "<all_urls>"],
   "browser_specific_settings": {
     "gecko": {
       "id": "media-stream-bridge@example.com",
