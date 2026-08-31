@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -11,6 +12,8 @@ export interface SpawnedProcess {
 
 export interface SaveStreamDependencies {
   makeDirectory(path: string): Promise<void>;
+  outputFileExists(path: string): Promise<boolean>;
+  removeFile(path: string): Promise<void>;
   spawnFfmpeg(args: string[]): SpawnedProcess;
   createSaveId(): string;
   outputDirectory: string;
@@ -18,7 +21,7 @@ export interface SaveStreamDependencies {
 
 export class SaveStreamError extends Error {
   constructor(
-    readonly code: "ffmpeg-start-failed" | "ffmpeg-exit",
+    readonly code: "ffmpeg-start-failed" | "ffmpeg-exit" | "internal-error",
     message: string,
   ) {
     super(message);
@@ -31,6 +34,8 @@ export type SpawnProcess = (
   options: { shell: false; stdio: ["ignore", "ignore", "ignore"] },
 ) => SpawnedProcess;
 
+type FileAccess = (path: string, mode: number) => Promise<void>;
+
 export function createFfmpegSpawner(
   ffmpegPath: string,
   spawnProcess: SpawnProcess = spawn,
@@ -42,10 +47,35 @@ export function createFfmpegSpawner(
     spawnProcess(ffmpegPath, args, { shell: false, stdio: ["ignore", "ignore", "ignore"] });
 }
 
+export function createOutputFileExists(
+  fileAccess: FileAccess = access,
+): (file: string) => Promise<boolean> {
+  return async (file) => {
+    try {
+      await fileAccess(file, constants.F_OK);
+      return true;
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  };
+}
+
 export function createDefaultDependencies(ffmpegPath: string): SaveStreamDependencies {
   return {
     makeDirectory: async (directory) => {
       await mkdir(directory, { recursive: true });
+    },
+    outputFileExists: createOutputFileExists(),
+    removeFile: async (file) => {
+      await rm(file, { force: true });
     },
     spawnFfmpeg: createFfmpegSpawner(ffmpegPath),
     createSaveId: randomUUID,
@@ -71,6 +101,23 @@ export interface StartedSave {
   completed: Promise<void>;
 }
 
+async function cleanupFailedSave(
+  outputFile: string,
+  outputFileExisted: boolean,
+  error: SaveStreamError,
+  dependencies: SaveStreamDependencies,
+): Promise<SaveStreamError> {
+  if (outputFileExisted) {
+    return error;
+  }
+  try {
+    await dependencies.removeFile(outputFile);
+    return error;
+  } catch {
+    return new SaveStreamError("internal-error", "failed to remove incomplete output file");
+  }
+}
+
 export async function startSaveStream(
   hlsUrl: string,
   dependencies: SaveStreamDependencies,
@@ -82,24 +129,43 @@ export async function startSaveStream(
   const saveId = dependencies.createSaveId();
   const outputFile = join(dependencies.outputDirectory, `media-stream-${saveId}.mp4`);
   await dependencies.makeDirectory(dependencies.outputDirectory);
+  const outputFileExisted = await dependencies.outputFileExists(outputFile);
 
   const args = ["-nostdin", "-i", hlsUrl, "-c", "copy", "-n", outputFile];
   let child: SpawnedProcess;
   try {
     child = dependencies.spawnFfmpeg(args);
   } catch {
-    throw new SaveStreamError("ffmpeg-start-failed", "ffmpeg could not be started");
+    throw await cleanupFailedSave(
+      outputFile,
+      outputFileExisted,
+      new SaveStreamError("ffmpeg-start-failed", "ffmpeg could not be started"),
+      dependencies,
+    );
   }
   const completed = new Promise<void>((resolve, reject) => {
-    child.once("error", () =>
-      reject(new SaveStreamError("ffmpeg-start-failed", "ffmpeg could not be started")),
-    );
+    let settled = false;
+    const fail = (error: SaveStreamError): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      void cleanupFailedSave(outputFile, outputFileExisted, error, dependencies).then(reject);
+    };
+
+    child.once("error", () => {
+      fail(new SaveStreamError("ffmpeg-start-failed", "ffmpeg could not be started"));
+    });
     child.once("close", (code: number | null) => {
+      if (settled) {
+        return;
+      }
       if (code === 0) {
+        settled = true;
         resolve();
         return;
       }
-      reject(new SaveStreamError("ffmpeg-exit", "ffmpeg exited unsuccessfully"));
+      fail(new SaveStreamError("ffmpeg-exit", "ffmpeg exited unsuccessfully"));
     });
   });
 

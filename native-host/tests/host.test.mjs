@@ -205,6 +205,48 @@ test("Native Hostは開始後の保存失敗を通知してから切断を待つ
   await running;
 });
 
+test("Native Hostは後始末完了前に保存失敗を通知しない", async () => {
+  const responses = [];
+  let notifyStarted;
+  const startedWritten = new Promise((resolve) => {
+    notifyStarted = resolve;
+  });
+  let finishCleanup;
+  const completed = new Promise((_resolve, reject) => {
+    finishCleanup = () => reject(new Error("ffmpeg exited after cleanup"));
+  });
+
+  const running = runNativeHost("/opt/homebrew/bin/ffmpeg", {
+    readMessage: async () => ({
+      version: 1,
+      type: "save:start",
+      hlsUrl: "https://example.com/master.m3u8",
+    }),
+    writeMessage: async (response) => {
+      responses.push(response);
+      if (response.type === "save:started") {
+        notifyStarted();
+      }
+    },
+    startSave: async () => ({
+      saveId: "save-1",
+      outputFile: "/safe/output/media-stream-save-1.mp4",
+      completed,
+    }),
+    waitForDisconnect: async () => {},
+  });
+
+  await startedWritten;
+  assert.deepEqual(responses, [{ version: 1, type: "save:started", saveId: "save-1" }]);
+
+  finishCleanup();
+  await running;
+  assert.deepEqual(responses, [
+    { version: 1, type: "save:started", saveId: "save-1" },
+    { version: 1, type: "save:failed", code: "internal-error" },
+  ]);
+});
+
 test("stdin切断待機はEOFとタイムアウトでlistenerとtimerを解除する", async () => {
   const listeners = new Map();
   const input = {
