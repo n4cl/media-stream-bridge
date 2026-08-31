@@ -30,3 +30,19 @@ test("Native MessagingはURL用途の64KiB上限を超える本文を読む前�
   input.end(header);
   await assert.rejects(readNativeMessage(input), /exceeds Host input limit/);
 });
+
+test("Native Messagingの入力待機は中断時にlistenerを解除する", async () => {
+  const input = new PassThrough();
+  const controller = new AbortController();
+  const reading = readNativeMessage(input, controller.signal);
+
+  assert.equal(input.listenerCount("readable"), 1);
+  assert.equal(input.listenerCount("end"), 1);
+  assert.equal(input.listenerCount("error"), 1);
+
+  controller.abort();
+  await assert.rejects(reading, { name: "AbortError" });
+  assert.equal(input.listenerCount("readable"), 0);
+  assert.equal(input.listenerCount("end"), 0);
+  assert.equal(input.listenerCount("error"), 0);
+});

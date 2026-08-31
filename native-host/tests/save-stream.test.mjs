@@ -220,3 +220,156 @@ test("Hostは後始末に失敗した場合に内部エラーとして失敗さ�
   child.emit("close", null);
   await assert.rejects(started.completed, { code: "internal-error" });
 });
+
+test("Hostはキャンセル時にffmpeg終了と後始末の完了後にcancelledとする", async () => {
+  const child = new EventEmitter();
+  let killed = false;
+  child.kill = () => {
+    killed = true;
+    return true;
+  };
+  let finishCleanup;
+  const cleanup = new Promise((resolve) => {
+    finishCleanup = resolve;
+  });
+  const removed = [];
+  const started = await startSaveStream("https://example.com/master.m3u8", {
+    makeDirectory: async () => {},
+    outputFileExists: async () => false,
+    removeFile: async (file) => {
+      removed.push(file);
+      await cleanup;
+    },
+    spawnFfmpeg: () => child,
+    createSaveId: () => "unique-id",
+    outputDirectory: "/safe/output",
+  });
+
+  assert.deepEqual(started.cancel(), { ok: true });
+  assert.equal(killed, true);
+  child.emit("close", null);
+  assert.deepEqual(removed, ["/safe/output/media-stream-unique-id.mp4"]);
+
+  let completed = false;
+  void started.completed.then(() => {
+    completed = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(completed, false);
+
+  finishCleanup();
+  assert.equal(await started.completed, "cancelled");
+});
+
+test("Hostは終了要求中に非0終了してもキャンセルとして後始末する", async () => {
+  const child = new EventEmitter();
+  child.kill = () => {
+    child.emit("close", null);
+    return true;
+  };
+  let cleanupCalls = 0;
+  const started = await startSaveStream("https://example.com/master.m3u8", {
+    makeDirectory: async () => {},
+    outputFileExists: async () => false,
+    removeFile: async () => {
+      cleanupCalls += 1;
+    },
+    spawnFfmpeg: () => child,
+    createSaveId: () => "unique-id",
+    outputDirectory: "/safe/output",
+  });
+
+  assert.deepEqual(started.cancel(), { ok: true });
+  assert.equal(await started.completed, "cancelled");
+  assert.equal(cleanupCalls, 1);
+});
+
+test("Hostはキャンセルと正常終了が競合した場合に完成ファイルを維持する", async () => {
+  const child = new EventEmitter();
+  child.kill = () => true;
+  let removed = false;
+  const started = await startSaveStream("https://example.com/master.m3u8", {
+    makeDirectory: async () => {},
+    outputFileExists: async () => false,
+    removeFile: async () => {
+      removed = true;
+    },
+    spawnFfmpeg: () => child,
+    createSaveId: () => "unique-id",
+    outputDirectory: "/safe/output",
+  });
+
+  assert.deepEqual(started.cancel(), { ok: true });
+  child.emit("close", 0);
+  assert.equal(await started.completed, "completed");
+  assert.equal(removed, false);
+});
+
+test("Hostは終了要求に失敗した場合に途中ファイルを削除せず元の終了を待つ", async () => {
+  const child = new EventEmitter();
+  child.kill = () => false;
+  let removed = false;
+  const started = await startSaveStream("https://example.com/master.m3u8", {
+    makeDirectory: async () => {},
+    outputFileExists: async () => false,
+    removeFile: async () => {
+      removed = true;
+    },
+    spawnFfmpeg: () => child,
+    createSaveId: () => "unique-id",
+    outputDirectory: "/safe/output",
+  });
+
+  assert.deepEqual(started.cancel(), { ok: false, code: "save-not-cancellable" });
+  assert.equal(removed, false);
+  child.emit("close", 0);
+  assert.equal(await started.completed, "completed");
+  assert.equal(removed, false);
+});
+
+test("Hostは終了要求が例外でも途中ファイルを削除せず元の終了を待つ", async () => {
+  const child = new EventEmitter();
+  child.kill = () => {
+    throw new Error("kill failed");
+  };
+  let removed = false;
+  const started = await startSaveStream("https://example.com/master.m3u8", {
+    makeDirectory: async () => {},
+    outputFileExists: async () => false,
+    removeFile: async () => {
+      removed = true;
+    },
+    spawnFfmpeg: () => child,
+    createSaveId: () => "unique-id",
+    outputDirectory: "/safe/output",
+  });
+
+  assert.deepEqual(started.cancel(), { ok: false, code: "cancel-failed" });
+  assert.equal(removed, false);
+  child.emit("close", 0);
+  assert.equal(await started.completed, "completed");
+  assert.equal(removed, false);
+});
+
+test("Hostはキャンセル後のerror終端も一度だけ後始末する", async () => {
+  const child = new EventEmitter();
+  child.kill = () => true;
+  let removeCount = 0;
+  const started = await startSaveStream("https://example.com/master.m3u8", {
+    makeDirectory: async () => {},
+    outputFileExists: async () => false,
+    removeFile: async () => {
+      removeCount += 1;
+    },
+    spawnFfmpeg: () => child,
+    createSaveId: () => "unique-id",
+    outputDirectory: "/safe/output",
+  });
+
+  assert.deepEqual(started.cancel(), { ok: true });
+  child.emit("error");
+  assert.equal(removeCount, 0);
+  child.emit("close", 1);
+  assert.equal(await started.completed, "cancelled");
+  assert.equal(removeCount, 1);
+});

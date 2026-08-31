@@ -102,8 +102,10 @@ function saveWithNativeHost(
           saveId: message.saveId,
           outputFile: message.outputFile,
         };
-      } else {
+      } else if (message.type === "save:failed") {
         failAttemptUnlessTerminal(tabId, attempt, message.code);
+      } else {
+        failAttemptUnlessTerminal(tabId, attempt, "native-host-invalid-response");
       }
       settle({ ok: true, response: message });
       port.disconnect();

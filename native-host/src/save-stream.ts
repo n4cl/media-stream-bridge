@@ -8,6 +8,7 @@ import { isAbsolute, join } from "node:path";
 export interface SpawnedProcess {
   once(event: "error", listener: () => void): ChildProcess;
   once(event: "close", listener: (code: number | null) => void): ChildProcess;
+  kill(): boolean;
 }
 
 export interface SaveStreamDependencies {
@@ -98,7 +99,8 @@ export function isAllowedHlsUrl(value: string): boolean {
 export interface StartedSave {
   saveId: string;
   outputFile: string;
-  completed: Promise<void>;
+  completed: Promise<"completed" | "cancelled">;
+  cancel(): { ok: true } | { ok: false; code: "save-not-cancellable" | "cancel-failed" };
 }
 
 async function cleanupFailedSave(
@@ -143,8 +145,9 @@ export async function startSaveStream(
       dependencies,
     );
   }
-  const completed = new Promise<void>((resolve, reject) => {
-    let settled = false;
+  let settled = false;
+  let cancellationRequested = false;
+  const completed = new Promise<"completed" | "cancelled">((resolve, reject) => {
     const fail = (error: SaveStreamError): void => {
       if (settled) {
         return;
@@ -152,8 +155,23 @@ export async function startSaveStream(
       settled = true;
       void cleanupFailedSave(outputFile, outputFileExisted, error, dependencies).then(reject);
     };
+    const cancel = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      void cleanupFailedSave(
+        outputFile,
+        outputFileExisted,
+        new SaveStreamError("ffmpeg-exit", "ffmpeg was cancelled"),
+        dependencies,
+      ).then(() => resolve("cancelled"), reject);
+    };
 
     child.once("error", () => {
+      if (cancellationRequested) {
+        return;
+      }
       fail(new SaveStreamError("ffmpeg-start-failed", "ffmpeg could not be started"));
     });
     child.once("close", (code: number | null) => {
@@ -162,14 +180,41 @@ export async function startSaveStream(
       }
       if (code === 0) {
         settled = true;
-        resolve();
+        resolve("completed");
+        return;
+      }
+      if (cancellationRequested) {
+        cancel();
         return;
       }
       fail(new SaveStreamError("ffmpeg-exit", "ffmpeg exited unsuccessfully"));
     });
   });
 
-  return { saveId, outputFile, completed };
+  const cancel = ():
+    | { ok: true }
+    | { ok: false; code: "save-not-cancellable" | "cancel-failed" } => {
+    if (settled || cancellationRequested) {
+      return { ok: false, code: "save-not-cancellable" };
+    }
+    cancellationRequested = true;
+    try {
+      if (!child.kill()) {
+        if (!settled) {
+          cancellationRequested = false;
+        }
+        return { ok: false, code: "save-not-cancellable" };
+      }
+    } catch {
+      if (!settled) {
+        cancellationRequested = false;
+      }
+      return { ok: false, code: "cancel-failed" };
+    }
+    return { ok: true };
+  };
+
+  return { saveId, outputFile, completed, cancel };
 }
 
 export async function saveStream(

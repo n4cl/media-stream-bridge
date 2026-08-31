@@ -6,6 +6,14 @@ export interface SaveStreamRequest {
   hlsUrl: string;
 }
 
+export interface SaveCancelRequest {
+  version: typeof NATIVE_MESSAGE_VERSION;
+  type: "save:cancel";
+  saveId: string;
+}
+
+export type NativeHostRequest = SaveStreamRequest | SaveCancelRequest;
+
 export interface SaveStartedResponse {
   version: typeof NATIVE_MESSAGE_VERSION;
   type: "save:started";
@@ -19,13 +27,31 @@ export interface SaveCompletedResponse {
   outputFile: string;
 }
 
+export interface SaveCancelledResponse {
+  version: typeof NATIVE_MESSAGE_VERSION;
+  type: "save:cancelled";
+  saveId: string;
+}
+
+export interface SaveCancelRejectedResponse {
+  version: typeof NATIVE_MESSAGE_VERSION;
+  type: "save:cancel-rejected";
+  saveId: string;
+  code: "save-id-mismatch" | "save-not-cancellable" | "cancel-failed";
+}
+
 export interface SaveFailedResponse {
   version: typeof NATIVE_MESSAGE_VERSION;
   type: "save:failed";
   code: "invalid-request" | "ffmpeg-start-failed" | "ffmpeg-exit" | "internal-error";
 }
 
-export type NativeHostResponse = SaveStartedResponse | SaveCompletedResponse | SaveFailedResponse;
+export type NativeHostResponse =
+  | SaveStartedResponse
+  | SaveCompletedResponse
+  | SaveCancelledResponse
+  | SaveCancelRejectedResponse
+  | SaveFailedResponse;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -38,6 +64,20 @@ export function isSaveStreamRequest(value: unknown): value is SaveStreamRequest 
     value.type === "save:start" &&
     typeof value.hlsUrl === "string"
   );
+}
+
+export function isSaveCancelRequest(value: unknown): value is SaveCancelRequest {
+  return (
+    isRecord(value) &&
+    value.version === NATIVE_MESSAGE_VERSION &&
+    value.type === "save:cancel" &&
+    typeof value.saveId === "string" &&
+    value.saveId.length > 0
+  );
+}
+
+export function isNativeHostRequest(value: unknown): value is NativeHostRequest {
+  return isSaveStreamRequest(value) || isSaveCancelRequest(value);
 }
 
 export function isNativeHostResponse(value: unknown): value is NativeHostResponse {
@@ -55,6 +95,20 @@ export function isNativeHostResponse(value: unknown): value is NativeHostRespons
       value.saveId.length > 0 &&
       typeof value.outputFile === "string" &&
       value.outputFile.length > 0
+    );
+  }
+
+  if (value.type === "save:cancelled") {
+    return typeof value.saveId === "string" && value.saveId.length > 0;
+  }
+
+  if (value.type === "save:cancel-rejected") {
+    return (
+      typeof value.saveId === "string" &&
+      value.saveId.length > 0 &&
+      (value.code === "save-id-mismatch" ||
+        value.code === "save-not-cancellable" ||
+        value.code === "cancel-failed")
     );
   }
 

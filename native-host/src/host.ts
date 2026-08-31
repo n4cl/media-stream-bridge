@@ -3,7 +3,11 @@ import process from "node:process";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
-import { isSaveStreamRequest, NATIVE_MESSAGE_VERSION } from "../../contracts/native-messages.js";
+import {
+  isNativeHostRequest,
+  isSaveStreamRequest,
+  NATIVE_MESSAGE_VERSION,
+} from "../../contracts/native-messages.js";
 import { readNativeMessage, writeNativeMessage } from "./framing.js";
 import {
   createDefaultDependencies,
@@ -60,7 +64,7 @@ export function waitForStdinDisconnect(
 }
 
 export interface NativeHostDependencies {
-  readMessage(): Promise<unknown | undefined>;
+  readMessage(signal?: AbortSignal): Promise<unknown | undefined>;
   writeMessage(value: unknown): Promise<void>;
   startSave(hlsUrl: string, ffmpegPath: string): Promise<StartedSave>;
   waitForDisconnect(): Promise<void>;
@@ -68,7 +72,7 @@ export interface NativeHostDependencies {
 
 function defaultDependencies(): NativeHostDependencies {
   return {
-    readMessage: () => readNativeMessage(process.stdin),
+    readMessage: (signal) => readNativeMessage(process.stdin, signal),
     writeMessage: (value) => writeNativeMessage(process.stdout, value),
     startSave: (hlsUrl, ffmpegPath) =>
       startSaveStream(hlsUrl, createDefaultDependencies(ffmpegPath)),
@@ -87,12 +91,29 @@ async function writeTerminalResponse(
       }
     | {
         version: typeof NATIVE_MESSAGE_VERSION;
+        type: "save:cancelled";
+        saveId: string;
+      }
+    | {
+        version: typeof NATIVE_MESSAGE_VERSION;
         type: "save:failed";
         code: "invalid-request" | "ffmpeg-start-failed" | "ffmpeg-exit" | "internal-error";
       },
 ): Promise<void> {
   await dependencies.writeMessage(response);
   await dependencies.waitForDisconnect();
+}
+
+type NativeInputResult = { kind: "message"; value: unknown | undefined } | { kind: "error" };
+
+function readNextMessage(
+  dependencies: NativeHostDependencies,
+  signal: AbortSignal,
+): Promise<NativeInputResult> {
+  return dependencies.readMessage(signal).then(
+    (value) => ({ kind: "message", value }),
+    () => ({ kind: "error" }),
+  );
 }
 
 export async function runNativeHost(
@@ -147,24 +168,101 @@ export async function runNativeHost(
     type: "save:started",
     saveId: started.saveId,
   });
-  try {
-    await started.completed;
-  } catch (error) {
-    const code = error instanceof SaveStreamError ? error.code : "internal-error";
-    await writeTerminalResponse(dependencies, {
-      version: NATIVE_MESSAGE_VERSION,
-      type: "save:failed",
-      code,
-    });
-    return;
-  }
+  const inputAbortController = new AbortController();
+  let input = readNextMessage(dependencies, inputAbortController.signal);
+  const completion = started.completed.then(
+    (outcome) => ({ kind: "completed" as const, outcome }),
+    (error) => ({ kind: "failed" as const, error }),
+  );
+  let boundaryViolation = false;
 
-  await writeTerminalResponse(dependencies, {
-    version: NATIVE_MESSAGE_VERSION,
-    type: "save:completed",
-    saveId: started.saveId,
-    outputFile: started.outputFile,
-  });
+  while (true) {
+    const next = await Promise.race([completion, input]);
+    if (next.kind === "completed" || next.kind === "failed") {
+      inputAbortController.abort();
+      await input;
+
+      if (boundaryViolation) {
+        await writeTerminalResponse(dependencies, {
+          version: NATIVE_MESSAGE_VERSION,
+          type: "save:failed",
+          code: "internal-error",
+        });
+        return;
+      }
+
+      if (next.kind === "failed") {
+        const code = next.error instanceof SaveStreamError ? next.error.code : "internal-error";
+        await writeTerminalResponse(dependencies, {
+          version: NATIVE_MESSAGE_VERSION,
+          type: "save:failed",
+          code,
+        });
+        return;
+      }
+
+      if (next.outcome === "cancelled") {
+        await writeTerminalResponse(dependencies, {
+          version: NATIVE_MESSAGE_VERSION,
+          type: "save:cancelled",
+          saveId: started.saveId,
+        });
+        return;
+      }
+
+      await writeTerminalResponse(dependencies, {
+        version: NATIVE_MESSAGE_VERSION,
+        type: "save:completed",
+        saveId: started.saveId,
+        outputFile: started.outputFile,
+      });
+      return;
+    }
+
+    if (
+      next.kind === "error" ||
+      !isNativeHostRequest(next.value) ||
+      next.value.type !== "save:cancel"
+    ) {
+      boundaryViolation = true;
+      started.cancel();
+      const terminal = await completion;
+      inputAbortController.abort();
+      await input;
+
+      await writeTerminalResponse(dependencies, {
+        version: NATIVE_MESSAGE_VERSION,
+        type: "save:failed",
+        code:
+          terminal.kind === "failed" && terminal.error instanceof SaveStreamError
+            ? terminal.error.code
+            : "internal-error",
+      });
+      return;
+    }
+
+    if (next.value.saveId !== started.saveId) {
+      await dependencies.writeMessage({
+        version: NATIVE_MESSAGE_VERSION,
+        type: "save:cancel-rejected",
+        saveId: next.value.saveId,
+        code: "save-id-mismatch",
+      });
+      input = readNextMessage(dependencies, inputAbortController.signal);
+      continue;
+    }
+
+    const cancellation = started.cancel();
+    if (!cancellation.ok) {
+      await dependencies.writeMessage({
+        version: NATIVE_MESSAGE_VERSION,
+        type: "save:cancel-rejected",
+        saveId: started.saveId,
+        code: cancellation.code,
+      });
+    }
+    input = readNextMessage(dependencies, inputAbortController.signal);
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

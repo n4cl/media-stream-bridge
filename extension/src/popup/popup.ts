@@ -176,8 +176,10 @@ form.addEventListener("submit", async (event) => {
         saveId: response.response.saveId,
         outputFile: response.response.outputFile,
       });
-    } else {
+    } else if (response.response.type === "save:failed") {
       renderSaveStatus({ state: "failed", error: response.response.code });
+    } else {
+      status.textContent = "保存結果を確認できませんでした。";
     }
   } catch {
     status.textContent = "保存中にエラーが発生しました。";
