@@ -26,6 +26,10 @@ p {
   overflow-wrap: anywhere;
 }
 
+#cancel-save-button:not([hidden]) {
+  margin-top: 10px;
+}
+
 fieldset {
   border: 0;
   margin: 0;

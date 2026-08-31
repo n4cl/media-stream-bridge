@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  cancellableSaveId,
   SAVE_STATUS_POLL_INTERVAL_MS,
   SaveStatusPoller,
   saveJobStatusText,
@@ -59,6 +60,19 @@ test("保存ジョブ状態をPopup向け文言へ変換する", () => {
     saveJobStatusText({ state: "failed", error: "ffmpeg-exit", saveId: "save-1" }),
     "保存に失敗しました。",
   );
+});
+
+test("キャンセル対象は実行中の保存だけに限定する", () => {
+  assert.equal(cancellableSaveId(null), null);
+  assert.equal(cancellableSaveId({ state: "starting" }), null);
+  assert.equal(cancellableSaveId({ state: "running", saveId: "save-1" }), "save-1");
+  assert.equal(cancellableSaveId({ state: "cancelling", saveId: "save-1" }), null);
+  assert.equal(cancellableSaveId({ state: "cancelled", saveId: "save-1" }), null);
+  assert.equal(
+    cancellableSaveId({ state: "completed", saveId: "save-1", outputFile: "/tmp/saved.mp4" }),
+    null,
+  );
+  assert.equal(cancellableSaveId({ state: "failed", error: "ffmpeg-exit" }), null);
 });
 
 test("Popupを開き直した状態照会は実行中から完了までポーリングする", async () => {

@@ -11,6 +11,10 @@ export function isActiveSaveJob(job: SaveJobStatus | null): boolean {
   return job?.state === "starting" || job?.state === "running" || job?.state === "cancelling";
 }
 
+export function cancellableSaveId(job: SaveJobStatus | null): string | null {
+  return job?.state === "running" ? job.saveId : null;
+}
+
 export function saveJobStatusText(job: SaveJobStatus | null): string | null {
   if (job === null) {
     return null;

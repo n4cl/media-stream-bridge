@@ -1,13 +1,16 @@
 import {
   isListCandidatesResponse,
+  isSaveCancelResponse,
   isSaveCandidateResponse,
   isSaveStatusResponse,
   type ListCandidatesMessage,
+  type SaveCancelMessage,
   type SaveCandidateMessage,
   type SaveJobStatus,
   type SaveStatusMessage,
 } from "../shared/messages.js";
 import {
+  cancellableSaveId,
   isActiveSaveJob,
   SaveStatusPoller,
   saveJobStatusText,
@@ -27,20 +30,24 @@ const status = requireElement<HTMLParagraphElement>("#status");
 const form = requireElement<HTMLFormElement>("#candidate-form");
 const list = requireElement<HTMLDivElement>("#candidate-list");
 const saveButton = requireElement<HTMLButtonElement>("#save-button");
+const cancelSaveButton = requireElement<HTMLButtonElement>("#cancel-save-button");
 const scheduler: TimerScheduler = {
   setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
   clearTimeout: (timerId) => window.clearTimeout(timerId),
 };
 
 let currentTabId: number | undefined;
+let currentSaveJob: SaveJobStatus | null = null;
 
 function renderSaveStatus(job: SaveJobStatus | null): void {
+  currentSaveJob = job;
   const text = saveJobStatusText(job);
   status.hidden = text === null;
   if (text !== null) {
     status.textContent = text;
   }
   saveButton.disabled = isActiveSaveJob(job);
+  cancelSaveButton.hidden = cancellableSaveId(job) === null;
 }
 
 async function requestSaveStatus(): Promise<SaveJobStatus | null> {
@@ -64,6 +71,19 @@ const statusPoller = new SaveStatusPoller(
   },
   scheduler,
 );
+
+async function refreshSaveStatus(): Promise<void> {
+  try {
+    const job = await requestSaveStatus();
+    renderSaveStatus(job);
+    if (isActiveSaveJob(job)) {
+      statusPoller.start();
+    }
+  } catch {
+    status.hidden = false;
+    status.textContent = "保存状態を確認できませんでした。";
+  }
+}
 
 function renderCandidates(candidates: Array<{ url: string }>): void {
   list.replaceChildren();
@@ -188,6 +208,26 @@ form.addEventListener("submit", async (event) => {
       saveButton.disabled = false;
     }
   }
+});
+
+cancelSaveButton.addEventListener("click", async () => {
+  const saveId = cancellableSaveId(currentSaveJob);
+  if (currentTabId === undefined || saveId === null) {
+    return;
+  }
+
+  renderSaveStatus({ state: "cancelling", saveId });
+  try {
+    const message: SaveCancelMessage = { type: "save:cancel", tabId: currentTabId, saveId };
+    const response: unknown = await browser.runtime.sendMessage(message);
+    if (isSaveCancelResponse(response) && response.ok) {
+      statusPoller.start();
+      return;
+    }
+  } catch {
+    // Backgroundの状態を再照会して、キャンセル済みと誤表示しない。
+  }
+  await refreshSaveStatus();
 });
 
 window.addEventListener("pagehide", () => {
