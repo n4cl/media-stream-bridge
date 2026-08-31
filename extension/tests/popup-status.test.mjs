@@ -4,7 +4,7 @@ import {
   SAVE_STATUS_POLL_INTERVAL_MS,
   SaveStatusPoller,
   saveJobStatusText,
-} from "../../extension/build/extension/src/popup/save-status.js";
+} from "../build/extension/src/popup/save-status.js";
 
 function createScheduler() {
   let nextTimerId = 1;

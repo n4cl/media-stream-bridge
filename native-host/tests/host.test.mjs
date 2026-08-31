@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  runNativeHost,
-  waitForStdinDisconnect,
-} from "../../native-host/build/native-host/src/host.js";
+import { runNativeHost, waitForStdinDisconnect } from "../build/native-host/src/host.js";
 
 test("Native Hostは保存開始と完了を契約順に返す", async () => {
   const responses = [];

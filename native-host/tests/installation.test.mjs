@@ -5,7 +5,7 @@ import {
   createNativeHostLauncher,
   createNativeHostManifest,
   resolveFfmpegPath,
-} from "../../native-host/build/native-host/src/installation.js";
+} from "../build/native-host/src/installation.js";
 
 test("インストーラは絶対パスを安全にquoteした固定ランチャーを生成する", () => {
   const launcher = createNativeHostLauncher(

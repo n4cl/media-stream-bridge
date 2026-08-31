@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 
-import {
-  readNativeMessage,
-  writeNativeMessage,
-} from "../../native-host/build/native-host/src/framing.js";
+import { readNativeMessage, writeNativeMessage } from "../build/native-host/src/framing.js";
 
 test("Native Messagingはlittle-endianの32-bit長さprefixとUTF-8 JSONで送受信する", async () => {
   const output = new PassThrough();

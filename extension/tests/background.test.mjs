@@ -77,7 +77,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     },
   };
 
-  await import("../../extension/build/extension/src/background/background.js");
+  await import("../build/extension/src/background/background.js");
 
   assert.equal(typeof observeRequest, "function");
   assert.equal(typeof commitNavigation, "function");

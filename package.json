@@ -16,6 +16,15 @@
     "check": "biome ci . && npm run build && web-ext lint --source-dir extension && node --test",
     "start:firefox": "npm run build && web-ext run --source-dir extension --firefox '/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox'"
   },
+  "webExt": {
+    "ignoreFiles": [
+      "tests",
+      "tests/**",
+      "src",
+      "src/**",
+      "tsconfig.json"
+    ]
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
     "@types/firefox-webext-browser": "143.0.0",
