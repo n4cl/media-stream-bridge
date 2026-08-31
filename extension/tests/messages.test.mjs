@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   isListCandidatesMessage,
   isListCandidatesResponse,
+  isSaveCancelMessage,
+  isSaveCancelResponse,
   isSaveCandidateResponse,
   isSaveStatusMessage,
   isSaveStatusResponse,
@@ -40,6 +42,21 @@ test("保存状態メッセージとレスポンスを検証する", () => {
   assert.equal(
     isSaveStatusResponse({
       ok: true,
+      job: { state: "running", saveId: "save-1", cancelError: "cancel-failed" },
+    }),
+    true,
+  );
+  assert.equal(
+    isSaveStatusResponse({ ok: true, job: { state: "cancelling", saveId: "save-1" } }),
+    true,
+  );
+  assert.equal(
+    isSaveStatusResponse({ ok: true, job: { state: "cancelled", saveId: "save-1" } }),
+    true,
+  );
+  assert.equal(
+    isSaveStatusResponse({
+      ok: true,
       job: { state: "completed", saveId: "save-1", outputFile: "/tmp/saved.mp4" },
     }),
     true,
@@ -66,6 +83,15 @@ test("保存状態メッセージとレスポンスを検証する", () => {
     false,
   );
   assert.equal(isSaveStatusResponse({ ok: false, error: "invalid-tab-id" }), true);
+});
+
+test("保存キャンセルメッセージは種別だけを判定し、値の検証は受信側に委ねる", () => {
+  assert.equal(isSaveCancelMessage({ type: "save:cancel", tabId: 1, saveId: "save-1" }), true);
+  assert.equal(isSaveCancelMessage({ type: "save:cancel", tabId: "invalid", saveId: 1 }), true);
+  assert.equal(isSaveCancelMessage({ type: "save:start", tabId: 1, saveId: "save-1" }), false);
+  assert.equal(isSaveCancelResponse({ ok: true }), true);
+  assert.equal(isSaveCancelResponse({ ok: false, error: "save-id-mismatch" }), true);
+  assert.equal(isSaveCancelResponse({ ok: false, error: "unknown" }), false);
 });
 
 test("重複保存開始エラーを保存開始レスポンスとして検証する", () => {

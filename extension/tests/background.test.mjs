@@ -305,6 +305,210 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   });
 
   assert.deepEqual(
+    await receiveMessage({ type: "save:cancel", tabId: "invalid", saveId: "save-7" }),
+    {
+      ok: false,
+      error: "invalid-tab-id",
+    },
+  );
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 13, saveId: "" }), {
+    ok: false,
+    error: "invalid-save-id",
+  });
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 13, saveId: "save-7" }), {
+    ok: false,
+    error: "save-not-running",
+  });
+
+  const startingCancel = receiveMessage({
+    type: "save:start",
+    tabId: 19,
+    hlsUrl: "https://example.com/starting-cancel.m3u8",
+  });
+  const startingCancelPort = nativePorts.at(-1);
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 19, saveId: "save-14" }), {
+    ok: false,
+    error: "save-not-running",
+  });
+  startingCancelPort.message({ version: 1, type: "save:started", saveId: "save-14" });
+  await startingCancel;
+  startingCancelPort.message({
+    version: 1,
+    type: "save:completed",
+    saveId: "save-14",
+    outputFile: "/tmp/started-after-cancel-rejection.mp4",
+  });
+
+  const cancellableSave = receiveMessage({
+    type: "save:start",
+    tabId: 13,
+    hlsUrl: "https://example.com/cancellable.m3u8",
+  });
+  const cancellablePort = nativePorts.at(-1);
+  cancellablePort.message({ version: 1, type: "save:started", saveId: "save-7" });
+  await cancellableSave;
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 13, saveId: "other-save" }), {
+    ok: false,
+    error: "save-id-mismatch",
+  });
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 13, saveId: "save-7" }), {
+    ok: true,
+  });
+  assert.deepEqual(cancellablePort.postedMessage, {
+    version: 1,
+    type: "save:cancel",
+    saveId: "save-7",
+  });
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 13 }), {
+    ok: true,
+    job: { state: "cancelling", saveId: "save-7" },
+  });
+  assert.deepEqual(
+    await receiveMessage({
+      type: "save:start",
+      tabId: 13,
+      hlsUrl: "https://example.com/duplicate-while-cancelling.m3u8",
+    }),
+    { ok: false, error: "save-already-running" },
+  );
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 13, saveId: "save-7" }), {
+    ok: false,
+    error: "save-not-running",
+  });
+  cancellablePort.message({ version: 1, type: "save:cancelled", saveId: "save-7" });
+  assert.equal(cancellablePort.disconnectCalls, 1);
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 13 }), {
+    ok: true,
+    job: { state: "cancelled", saveId: "save-7" },
+  });
+
+  const rejectedSave = receiveMessage({
+    type: "save:start",
+    tabId: 14,
+    hlsUrl: "https://example.com/rejected.m3u8",
+  });
+  const rejectedPort = nativePorts.at(-1);
+  rejectedPort.message({ version: 1, type: "save:started", saveId: "save-8" });
+  await rejectedSave;
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 14, saveId: "save-8" }), {
+    ok: true,
+  });
+  rejectedPort.message({
+    version: 1,
+    type: "save:cancel-rejected",
+    saveId: "save-8",
+    code: "cancel-failed",
+  });
+  assert.equal(rejectedPort.disconnectCalls, 0);
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 14 }), {
+    ok: true,
+    job: { state: "running", saveId: "save-8", cancelError: "cancel-failed" },
+  });
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 14, saveId: "save-8" }), {
+    ok: true,
+  });
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 14 }), {
+    ok: true,
+    job: { state: "cancelling", saveId: "save-8" },
+  });
+  rejectedPort.message({
+    version: 1,
+    type: "save:cancelled",
+    saveId: "save-8",
+  });
+  assert.equal(rejectedPort.disconnectCalls, 1);
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 14 }), {
+    ok: true,
+    job: { state: "cancelled", saveId: "save-8" },
+  });
+
+  const completionRace = receiveMessage({
+    type: "save:start",
+    tabId: 15,
+    hlsUrl: "https://example.com/completion-race.m3u8",
+  });
+  const completionRacePort = nativePorts.at(-1);
+  completionRacePort.message({ version: 1, type: "save:started", saveId: "save-9" });
+  await completionRace;
+  await receiveMessage({ type: "save:cancel", tabId: 15, saveId: "save-9" });
+  completionRacePort.message({
+    version: 1,
+    type: "save:completed",
+    saveId: "save-9",
+    outputFile: "/tmp/completed-during-cancelling.mp4",
+  });
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 15 }), {
+    ok: true,
+    job: {
+      state: "completed",
+      saveId: "save-9",
+      outputFile: "/tmp/completed-during-cancelling.mp4",
+    },
+  });
+
+  const failureRace = receiveMessage({
+    type: "save:start",
+    tabId: 16,
+    hlsUrl: "https://example.com/failure-race.m3u8",
+  });
+  const failureRacePort = nativePorts.at(-1);
+  failureRacePort.message({ version: 1, type: "save:started", saveId: "save-10" });
+  await failureRace;
+  await receiveMessage({ type: "save:cancel", tabId: 16, saveId: "save-10" });
+  failureRacePort.message({ version: 1, type: "save:failed", code: "ffmpeg-exit" });
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 16 }), {
+    ok: true,
+    job: { state: "failed", error: "ffmpeg-exit", saveId: "save-10" },
+  });
+
+  const postFailureSave = receiveMessage({
+    type: "save:start",
+    tabId: 17,
+    hlsUrl: "https://example.com/cancel-post-throws.m3u8",
+  });
+  const postFailurePort = nativePorts.at(-1);
+  postFailurePort.message({ version: 1, type: "save:started", saveId: "save-11" });
+  await postFailureSave;
+  throwPostMessage = true;
+  assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 17, saveId: "save-11" }), {
+    ok: false,
+    error: "native-host-unavailable",
+  });
+  assert.equal(postFailurePort.disconnectCalls, 1);
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 17 }), {
+    ok: true,
+    job: { state: "failed", error: "native-host-unavailable", saveId: "save-11" },
+  });
+
+  const disconnectedCancel = receiveMessage({
+    type: "save:start",
+    tabId: 18,
+    hlsUrl: "https://example.com/disconnected-cancel.m3u8",
+  });
+  const disconnectedCancelPort = nativePorts.at(-1);
+  disconnectedCancelPort.message({ version: 1, type: "save:started", saveId: "save-12" });
+  await disconnectedCancel;
+  await receiveMessage({ type: "save:cancel", tabId: 18, saveId: "save-12" });
+  disconnectedCancelPort.disconnect();
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 18 }), {
+    ok: true,
+    job: { state: "failed", error: "native-host-unavailable", saveId: "save-12" },
+  });
+
+  const replacementSave = receiveMessage({
+    type: "save:start",
+    tabId: 13,
+    hlsUrl: "https://example.com/replacement.m3u8",
+  });
+  cancellablePort.message({ version: 1, type: "save:cancelled", saveId: "save-7" });
+  assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 13 }), {
+    ok: true,
+    job: { state: "starting" },
+  });
+  nativePorts.at(-1).message({ version: 1, type: "save:started", saveId: "save-13" });
+  await replacementSave;
+
+  assert.deepEqual(
     await receiveMessage({
       type: "save:start",
       tabId: "invalid",

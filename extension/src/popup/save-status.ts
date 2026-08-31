@@ -8,7 +8,7 @@ export interface TimerScheduler {
 }
 
 export function isActiveSaveJob(job: SaveJobStatus | null): boolean {
-  return job?.state === "starting" || job?.state === "running";
+  return job?.state === "starting" || job?.state === "running" || job?.state === "cancelling";
 }
 
 export function saveJobStatusText(job: SaveJobStatus | null): string | null {
@@ -19,10 +19,18 @@ export function saveJobStatusText(job: SaveJobStatus | null): string | null {
     return "保存を開始しています…";
   }
   if (job.state === "running") {
-    return "保存しています…";
+    return job.cancelError === undefined
+      ? "保存しています…"
+      : "キャンセルできませんでした。保存を継続しています。";
+  }
+  if (job.state === "cancelling") {
+    return "キャンセルしています…";
   }
   if (job.state === "completed") {
     return `保存しました: ${job.outputFile}`;
+  }
+  if (job.state === "cancelled") {
+    return "保存をキャンセルしました。";
   }
   return "保存に失敗しました。";
 }

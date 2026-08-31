@@ -5,9 +5,11 @@ import {
 import { CandidateStore, isHlsPlaylistUrl } from "../shared/candidates.js";
 import {
   isListCandidatesMessage,
+  isSaveCancelMessage,
   isSaveCandidateMessage,
   isSaveStatusMessage,
   type ListCandidatesResponse,
+  type SaveCancelResponse,
   type SaveCandidateResponse,
   type SaveJobStatus,
   type SaveStatusResponse,
@@ -16,6 +18,7 @@ import {
 const candidates = new CandidateStore();
 interface SaveJobAttempt {
   status: SaveJobStatus;
+  port?: browser.runtime.Port;
 }
 
 const saveJobAttemptsByTab = new Map<number, SaveJobAttempt>();
@@ -26,11 +29,19 @@ function isValidTabId(tabId: unknown): tabId is number {
 }
 
 function isTerminalJob(job: SaveJobStatus): boolean {
-  return job?.state === "completed" || job?.state === "failed";
+  return job.state === "completed" || job.state === "cancelled" || job.state === "failed";
 }
 
 function isCurrentAttempt(tabId: number, attempt: SaveJobAttempt): boolean {
   return saveJobAttemptsByTab.get(tabId) === attempt;
+}
+
+function isCurrentAttemptPort(
+  tabId: number,
+  attempt: SaveJobAttempt,
+  port: browser.runtime.Port,
+): boolean {
+  return isCurrentAttempt(tabId, attempt) && attempt.port === port;
 }
 
 function failAttemptUnlessTerminal(
@@ -42,9 +53,20 @@ function failAttemptUnlessTerminal(
     return;
   }
   attempt.status =
-    attempt.status.state === "running"
+    attempt.status.state === "running" || attempt.status.state === "cancelling"
       ? { state: "failed", error, saveId: attempt.status.saveId }
       : { state: "failed", error };
+}
+
+function disconnectAttemptPort(attempt: SaveJobAttempt, port: browser.runtime.Port): void {
+  if (attempt.port === port) {
+    delete attempt.port;
+  }
+  try {
+    port.disconnect();
+  } catch {
+    // 既に切断済みのPortでも終端状態は維持する。
+  }
 }
 
 function saveWithNativeHost(
@@ -68,33 +90,51 @@ function saveWithNativeHost(
       settle({ ok: false, error: "native-host-unavailable" });
       return;
     }
+    attempt.port = port;
 
     port.onMessage.addListener((message: unknown) => {
-      if (!isCurrentAttempt(tabId, attempt)) {
+      if (!isCurrentAttemptPort(tabId, attempt, port)) {
         return;
       }
       if (!isNativeHostResponse(message)) {
         failAttemptUnlessTerminal(tabId, attempt, "native-host-invalid-response");
         settle({ ok: false, error: "native-host-invalid-response" });
-        port.disconnect();
+        disconnectAttemptPort(attempt, port);
         return;
       }
       if (message.type === "save:started") {
         if (attempt.status.state !== "starting") {
           failAttemptUnlessTerminal(tabId, attempt, "native-host-invalid-response");
           settle({ ok: false, error: "native-host-invalid-response" });
-          port.disconnect();
+          disconnectAttemptPort(attempt, port);
           return;
         }
         attempt.status = { state: "running", saveId: message.saveId };
         settle({ ok: true, response: message });
         return;
       }
-      if (message.type === "save:completed") {
-        if (attempt.status.state !== "running" || attempt.status.saveId !== message.saveId) {
+      if (message.type === "save:cancel-rejected") {
+        if (attempt.status.state !== "cancelling" || attempt.status.saveId !== message.saveId) {
           failAttemptUnlessTerminal(tabId, attempt, "native-host-invalid-response");
           settle({ ok: false, error: "native-host-invalid-response" });
-          port.disconnect();
+          disconnectAttemptPort(attempt, port);
+          return;
+        }
+        attempt.status = {
+          state: "running",
+          saveId: message.saveId,
+          cancelError: message.code,
+        };
+        return;
+      }
+      if (message.type === "save:completed") {
+        if (
+          (attempt.status.state !== "running" && attempt.status.state !== "cancelling") ||
+          attempt.status.saveId !== message.saveId
+        ) {
+          failAttemptUnlessTerminal(tabId, attempt, "native-host-invalid-response");
+          settle({ ok: false, error: "native-host-invalid-response" });
+          disconnectAttemptPort(attempt, port);
           return;
         }
         attempt.status = {
@@ -102,18 +142,27 @@ function saveWithNativeHost(
           saveId: message.saveId,
           outputFile: message.outputFile,
         };
+      } else if (message.type === "save:cancelled") {
+        if (attempt.status.state !== "cancelling" || attempt.status.saveId !== message.saveId) {
+          failAttemptUnlessTerminal(tabId, attempt, "native-host-invalid-response");
+          settle({ ok: false, error: "native-host-invalid-response" });
+          disconnectAttemptPort(attempt, port);
+          return;
+        }
+        attempt.status = { state: "cancelled", saveId: message.saveId };
       } else if (message.type === "save:failed") {
         failAttemptUnlessTerminal(tabId, attempt, message.code);
       } else {
         failAttemptUnlessTerminal(tabId, attempt, "native-host-invalid-response");
       }
       settle({ ok: true, response: message });
-      port.disconnect();
+      disconnectAttemptPort(attempt, port);
     });
     port.onDisconnect.addListener(() => {
-      if (!isCurrentAttempt(tabId, attempt)) {
+      if (!isCurrentAttemptPort(tabId, attempt, port)) {
         return;
       }
+      delete attempt.port;
       failAttemptUnlessTerminal(tabId, attempt, "native-host-unavailable");
       settle({ ok: false, error: "native-host-unavailable" });
     });
@@ -122,11 +171,7 @@ function saveWithNativeHost(
     } catch {
       failAttemptUnlessTerminal(tabId, attempt, "native-host-unavailable");
       settle({ ok: false, error: "native-host-unavailable" });
-      try {
-        port.disconnect();
-      } catch {
-        // 接続に失敗したPortは切断済みの場合がある。
-      }
+      disconnectAttemptPort(attempt, port);
     }
   });
 }
@@ -161,7 +206,8 @@ browser.runtime.onMessage.addListener((message: unknown) => {
     const existingAttempt = saveJobAttemptsByTab.get(message.tabId);
     if (
       existingAttempt?.status.state === "starting" ||
-      existingAttempt?.status.state === "running"
+      existingAttempt?.status.state === "running" ||
+      existingAttempt?.status.state === "cancelling"
     ) {
       const response: SaveCandidateResponse = { ok: false, error: "save-already-running" };
       return Promise.resolve(response);
@@ -176,6 +222,43 @@ browser.runtime.onMessage.addListener((message: unknown) => {
     const attempt: SaveJobAttempt = { status: { state: "starting" } };
     saveJobAttemptsByTab.set(message.tabId, attempt);
     return saveWithNativeHost(message.tabId, attempt, message.hlsUrl);
+  }
+
+  if (isSaveCancelMessage(message)) {
+    if (!isValidTabId(message.tabId)) {
+      const response: SaveCancelResponse = { ok: false, error: "invalid-tab-id" };
+      return Promise.resolve(response);
+    }
+    if (typeof message.saveId !== "string" || message.saveId.length === 0) {
+      const response: SaveCancelResponse = { ok: false, error: "invalid-save-id" };
+      return Promise.resolve(response);
+    }
+    const attempt = saveJobAttemptsByTab.get(message.tabId);
+    if (attempt?.status.state !== "running" || !attempt?.port) {
+      const response: SaveCancelResponse = { ok: false, error: "save-not-running" };
+      return Promise.resolve(response);
+    }
+    if (attempt.status.saveId !== message.saveId) {
+      const response: SaveCancelResponse = { ok: false, error: "save-id-mismatch" };
+      return Promise.resolve(response);
+    }
+
+    const port = attempt.port;
+    attempt.status = { state: "cancelling", saveId: message.saveId };
+    try {
+      port.postMessage({
+        version: NATIVE_MESSAGE_VERSION,
+        type: "save:cancel",
+        saveId: message.saveId,
+      });
+    } catch {
+      failAttemptUnlessTerminal(message.tabId, attempt, "native-host-unavailable");
+      disconnectAttemptPort(attempt, port);
+      const response: SaveCancelResponse = { ok: false, error: "native-host-unavailable" };
+      return Promise.resolve(response);
+    }
+    const response: SaveCancelResponse = { ok: true };
+    return Promise.resolve(response);
   }
 
   if (isSaveStatusMessage(message)) {

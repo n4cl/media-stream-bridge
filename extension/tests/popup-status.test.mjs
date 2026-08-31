@@ -40,6 +40,18 @@ test("保存ジョブ状態をPopup向け文言へ変換する", () => {
   assert.equal(saveJobStatusText({ state: "starting" }), "保存を開始しています…");
   assert.equal(saveJobStatusText({ state: "running", saveId: "save-1" }), "保存しています…");
   assert.equal(
+    saveJobStatusText({ state: "running", saveId: "save-1", cancelError: "cancel-failed" }),
+    "キャンセルできませんでした。保存を継続しています。",
+  );
+  assert.equal(
+    saveJobStatusText({ state: "cancelling", saveId: "save-1" }),
+    "キャンセルしています…",
+  );
+  assert.equal(
+    saveJobStatusText({ state: "cancelled", saveId: "save-1" }),
+    "保存をキャンセルしました。",
+  );
+  assert.equal(
     saveJobStatusText({ state: "completed", saveId: "save-1", outputFile: "/tmp/saved.mp4" }),
     "保存しました: /tmp/saved.mp4",
   );
@@ -74,6 +86,31 @@ test("Popupを開き直した状態照会は実行中から完了までポーリ
     { state: "running", saveId: "save-1" },
     { state: "completed", saveId: "save-1", outputFile: "/tmp/saved.mp4" },
   ]);
+  assert.equal(scheduler.size, 0);
+});
+
+test("Popupを開き直した状態照会はキャンセル中も終端までポーリングする", async () => {
+  const scheduler = createScheduler();
+  const updates = [];
+  const statuses = [
+    { state: "cancelling", saveId: "save-1" },
+    { state: "cancelled", saveId: "save-1" },
+  ];
+  const poller = new SaveStatusPoller(
+    async () => statuses.shift() ?? null,
+    (status) => updates.push(status),
+    () => assert.fail("status query should not fail"),
+    scheduler,
+  );
+
+  poller.start();
+  await flush();
+  assert.deepEqual(updates, [{ state: "cancelling", saveId: "save-1" }]);
+  assert.equal(scheduler.size, 1);
+
+  scheduler.runNext();
+  await flush();
+  assert.deepEqual(updates.at(-1), { state: "cancelled", saveId: "save-1" });
   assert.equal(scheduler.size, 0);
 });
 

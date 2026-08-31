@@ -36,9 +36,33 @@ export type SaveCandidateResponse =
         | "native-host-invalid-response";
     };
 
+export interface SaveCancelMessage {
+  type: "save:cancel";
+  tabId?: unknown;
+  saveId?: unknown;
+}
+
+export type SaveCancelResponse =
+  | { ok: true }
+  | {
+      ok: false;
+      error:
+        | "invalid-tab-id"
+        | "invalid-save-id"
+        | "save-not-running"
+        | "save-id-mismatch"
+        | "native-host-unavailable";
+    };
+
 export type SaveJobStatus =
   | { state: "starting" }
-  | { state: "running"; saveId: string }
+  | {
+      state: "running";
+      saveId: string;
+      cancelError?: "save-id-mismatch" | "save-not-cancellable" | "cancel-failed";
+    }
+  | { state: "cancelling"; saveId: string }
+  | { state: "cancelled"; saveId: string }
   | { state: "completed"; saveId: string; outputFile: string }
   | {
       state: "failed";
@@ -79,6 +103,14 @@ export function isSaveCandidateMessage(value: unknown): value is SaveCandidateMe
   );
 }
 
+export function isSaveCancelMessage(value: unknown): value is SaveCancelMessage {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as Record<string, unknown>).type === "save:cancel"
+  );
+}
+
 export function isSaveCandidateResponse(value: unknown): value is SaveCandidateResponse {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -94,6 +126,22 @@ export function isSaveCandidateResponse(value: unknown): value is SaveCandidateR
       response.error === "save-already-running" ||
       response.error === "native-host-unavailable" ||
       response.error === "native-host-invalid-response")
+  );
+}
+
+export function isSaveCancelResponse(value: unknown): value is SaveCancelResponse {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const response = value as Record<string, unknown>;
+  return (
+    response.ok === true ||
+    (response.ok === false &&
+      (response.error === "invalid-tab-id" ||
+        response.error === "invalid-save-id" ||
+        response.error === "save-not-running" ||
+        response.error === "save-id-mismatch" ||
+        response.error === "native-host-unavailable"))
   );
 }
 
@@ -114,6 +162,16 @@ function isSaveJobStatus(value: unknown): value is SaveJobStatus {
     return true;
   }
   if (job.state === "running") {
+    return (
+      typeof job.saveId === "string" &&
+      job.saveId.length > 0 &&
+      (job.cancelError === undefined ||
+        job.cancelError === "save-id-mismatch" ||
+        job.cancelError === "save-not-cancellable" ||
+        job.cancelError === "cancel-failed")
+    );
+  }
+  if (job.state === "cancelling" || job.state === "cancelled") {
     return typeof job.saveId === "string" && job.saveId.length > 0;
   }
   if (job.state === "completed") {
