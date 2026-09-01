@@ -5,6 +5,8 @@ import { access, link, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
+import type { SaveDestination } from "../../contracts/native-messages.js";
+
 export interface SpawnedProcess {
   once(event: "error", listener: () => void): ChildProcess;
   once(event: "close", listener: (code: number | null) => void): ChildProcess;
@@ -18,13 +20,16 @@ export interface SaveStreamDependencies {
   publishFile(temporaryFile: string, outputFile: string): Promise<void>;
   spawnFfmpeg(args: string[]): SpawnedProcess;
   createSaveId(): string;
-  outputDirectory: string;
+  outputDirectory?: string;
+  outputDirectoryForDestination?: (destination: SaveDestination) => string;
 }
 
 export class SaveStreamError extends Error {
   constructor(
     readonly code:
       | "invalid-output-file-name"
+      | "invalid-save-destination"
+      | "output-directory-unavailable"
       | "output-file-exists"
       | "ffmpeg-start-failed"
       | "ffmpeg-exit"
@@ -35,6 +40,21 @@ export class SaveStreamError extends Error {
   }
 }
 
+export function isAllowedSaveDestination(value: string): value is SaveDestination {
+  return value === "movies" || value === "downloads";
+}
+
+export function resolveOutputDirectory(
+  destination: SaveDestination,
+  homeDirectory = homedir(),
+): string {
+  return join(
+    homeDirectory,
+    destination === "movies" ? "Movies" : "Downloads",
+    "Media Stream Bridge",
+  );
+}
+
 export type SpawnProcess = (
   command: string,
   args: string[],
@@ -42,6 +62,19 @@ export type SpawnProcess = (
 ) => SpawnedProcess;
 
 type FileAccess = (path: string, mode: number) => Promise<void>;
+type MakeDirectory = (path: string) => Promise<void>;
+
+export function createOutputDirectoryPreparer(
+  makeDirectory: MakeDirectory = async (directory) => {
+    await mkdir(directory, { recursive: true });
+  },
+  directoryAccess: FileAccess = access,
+): MakeDirectory {
+  return async (directory) => {
+    await makeDirectory(directory);
+    await directoryAccess(directory, constants.W_OK);
+  };
+}
 
 export function createFfmpegSpawner(
   ffmpegPath: string,
@@ -77,9 +110,7 @@ export function createOutputFileExists(
 
 export function createDefaultDependencies(ffmpegPath: string): SaveStreamDependencies {
   return {
-    makeDirectory: async (directory) => {
-      await mkdir(directory, { recursive: true });
-    },
+    makeDirectory: createOutputDirectoryPreparer(),
     outputFileExists: createOutputFileExists(),
     removeFile: async (file) => {
       await rm(file, { force: true });
@@ -89,7 +120,7 @@ export function createDefaultDependencies(ffmpegPath: string): SaveStreamDepende
     publishFile: link,
     spawnFfmpeg: createFfmpegSpawner(ffmpegPath),
     createSaveId: randomUUID,
-    outputDirectory: join(homedir(), "Movies", "Media Stream Bridge"),
+    outputDirectoryForDestination: (destination) => resolveOutputDirectory(destination),
   };
 }
 
@@ -155,6 +186,7 @@ export async function startSaveStream(
   hlsUrl: string,
   dependencies: SaveStreamDependencies,
   outputFileName?: string,
+  destination?: string,
 ): Promise<StartedSave> {
   if (!isAllowedHlsUrl(hlsUrl)) {
     throw new SaveStreamError("ffmpeg-exit", "The stream URL is not an HTTP(S) HLS playlist");
@@ -164,13 +196,37 @@ export async function startSaveStream(
   if (outputFileName !== undefined && !isAllowedOutputFileName(outputFileName)) {
     throw new SaveStreamError("invalid-output-file-name", "invalid output file name");
   }
-  const outputFile = join(
-    dependencies.outputDirectory,
-    outputFileName ?? `media-stream-${saveId}.mp4`,
-  );
-  const temporaryFile = join(dependencies.outputDirectory, `.media-stream-${saveId}.partial.mp4`);
-  await dependencies.makeDirectory(dependencies.outputDirectory);
-  const temporaryFileExisted = await dependencies.outputFileExists(temporaryFile);
+  if (destination !== undefined && !isAllowedSaveDestination(destination)) {
+    throw new SaveStreamError("invalid-save-destination", "invalid save destination");
+  }
+  const outputDirectory =
+    dependencies.outputDirectoryForDestination?.(destination ?? "movies") ??
+    dependencies.outputDirectory;
+  if (outputDirectory === undefined) {
+    throw new SaveStreamError("internal-error", "output directory is not configured");
+  }
+  const outputFile = join(outputDirectory, outputFileName ?? `media-stream-${saveId}.mp4`);
+  const temporaryFile = join(outputDirectory, `.media-stream-${saveId}.partial.mp4`);
+  try {
+    await dependencies.makeDirectory(outputDirectory);
+  } catch {
+    throw new SaveStreamError("output-directory-unavailable", "output directory is unavailable");
+  }
+  let outputFileExists: boolean;
+  try {
+    outputFileExists = await dependencies.outputFileExists(outputFile);
+  } catch {
+    throw new SaveStreamError("output-directory-unavailable", "output directory is unavailable");
+  }
+  if (outputFileExists) {
+    throw new SaveStreamError("output-file-exists", "output file already exists");
+  }
+  let temporaryFileExisted: boolean;
+  try {
+    temporaryFileExisted = await dependencies.outputFileExists(temporaryFile);
+  } catch {
+    throw new SaveStreamError("output-directory-unavailable", "output directory is unavailable");
+  }
   if (temporaryFileExisted) {
     throw new SaveStreamError("internal-error", "temporary output file already exists");
   }
@@ -282,8 +338,9 @@ export async function saveStream(
   hlsUrl: string,
   dependencies: SaveStreamDependencies,
   outputFileName?: string,
+  destination?: string,
 ): Promise<{ saveId: string; outputFile: string }> {
-  const started = await startSaveStream(hlsUrl, dependencies, outputFileName);
+  const started = await startSaveStream(hlsUrl, dependencies, outputFileName, destination);
   await started.completed;
   return { saveId: started.saveId, outputFile: started.outputFile };
 }

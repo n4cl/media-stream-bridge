@@ -1,10 +1,21 @@
-export const NATIVE_MESSAGE_VERSION = 2;
+export const NATIVE_MESSAGE_VERSION = 3;
+
+export type SaveDestination = "movies" | "downloads";
 
 export interface SaveStreamRequest {
   version: typeof NATIVE_MESSAGE_VERSION;
   type: "save:start";
   hlsUrl: string;
   outputFileName?: string;
+  destination?: SaveDestination;
+}
+
+export interface SaveStreamRequestBase {
+  version: typeof NATIVE_MESSAGE_VERSION;
+  type: "save:start";
+  hlsUrl: string;
+  outputFileName?: string;
+  destination?: unknown;
 }
 
 export interface SaveCancelRequest {
@@ -47,6 +58,8 @@ export interface SaveFailedResponse {
   code:
     | "invalid-request"
     | "invalid-output-file-name"
+    | "invalid-save-destination"
+    | "output-directory-unavailable"
     | "output-file-exists"
     | "ffmpeg-start-failed"
     | "ffmpeg-exit"
@@ -64,13 +77,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export function isSaveStreamRequest(value: unknown): value is SaveStreamRequest {
+export function isSaveStreamRequestBase(value: unknown): value is SaveStreamRequestBase {
   return (
     isRecord(value) &&
     value.version === NATIVE_MESSAGE_VERSION &&
     value.type === "save:start" &&
     typeof value.hlsUrl === "string" &&
     (value.outputFileName === undefined || typeof value.outputFileName === "string")
+  );
+}
+
+export function isSaveStreamRequest(value: unknown): value is SaveStreamRequest {
+  return (
+    isSaveStreamRequestBase(value) &&
+    (value.destination === undefined ||
+      value.destination === "movies" ||
+      value.destination === "downloads")
   );
 }
 
@@ -124,6 +146,8 @@ export function isNativeHostResponse(value: unknown): value is NativeHostRespons
     value.type === "save:failed" &&
     (value.code === "invalid-request" ||
       value.code === "invalid-output-file-name" ||
+      value.code === "invalid-save-destination" ||
+      value.code === "output-directory-unavailable" ||
       value.code === "output-file-exists" ||
       value.code === "ffmpeg-start-failed" ||
       value.code === "ffmpeg-exit" ||

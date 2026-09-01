@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   isNativeHostRequest,
-  isSaveStreamRequest,
+  isSaveStreamRequestBase,
   NATIVE_MESSAGE_VERSION,
 } from "../../contracts/native-messages.js";
 import { readNativeMessage, writeNativeMessage } from "./framing.js";
@@ -13,6 +13,7 @@ import {
   createDefaultDependencies,
   isAllowedHlsUrl,
   isAllowedOutputFileName,
+  isAllowedSaveDestination,
   SaveStreamError,
   type StartedSave,
   startSaveStream,
@@ -67,7 +68,12 @@ export function waitForStdinDisconnect(
 export interface NativeHostDependencies {
   readMessage(signal?: AbortSignal): Promise<unknown | undefined>;
   writeMessage(value: unknown): Promise<void>;
-  startSave(hlsUrl: string, ffmpegPath: string, outputFileName?: string): Promise<StartedSave>;
+  startSave(
+    hlsUrl: string,
+    ffmpegPath: string,
+    outputFileName?: string,
+    destination?: string,
+  ): Promise<StartedSave>;
   waitForDisconnect(): Promise<void>;
 }
 
@@ -75,8 +81,8 @@ function defaultDependencies(): NativeHostDependencies {
   return {
     readMessage: (signal) => readNativeMessage(process.stdin, signal),
     writeMessage: (value) => writeNativeMessage(process.stdout, value),
-    startSave: (hlsUrl, ffmpegPath, outputFileName) =>
-      startSaveStream(hlsUrl, createDefaultDependencies(ffmpegPath), outputFileName),
+    startSave: (hlsUrl, ffmpegPath, outputFileName, destination) =>
+      startSaveStream(hlsUrl, createDefaultDependencies(ffmpegPath), outputFileName, destination),
     waitForDisconnect: () => waitForStdinDisconnect(process.stdin as Readable),
   };
 }
@@ -101,6 +107,8 @@ async function writeTerminalResponse(
         code:
           | "invalid-request"
           | "invalid-output-file-name"
+          | "invalid-save-destination"
+          | "output-directory-unavailable"
           | "output-file-exists"
           | "ffmpeg-start-failed"
           | "ffmpeg-exit"
@@ -139,11 +147,23 @@ export async function runNativeHost(
     return;
   }
 
-  if (!isSaveStreamRequest(request) || !isAllowedHlsUrl(request.hlsUrl)) {
+  if (!isSaveStreamRequestBase(request) || !isAllowedHlsUrl(request.hlsUrl)) {
     await writeTerminalResponse(dependencies, {
       version: NATIVE_MESSAGE_VERSION,
       type: "save:failed",
       code: "invalid-request",
+    });
+    return;
+  }
+
+  if (
+    request.destination !== undefined &&
+    (typeof request.destination !== "string" || !isAllowedSaveDestination(request.destination))
+  ) {
+    await writeTerminalResponse(dependencies, {
+      version: NATIVE_MESSAGE_VERSION,
+      type: "save:failed",
+      code: "invalid-save-destination",
     });
     return;
   }
@@ -168,7 +188,12 @@ export async function runNativeHost(
 
   let started: StartedSave;
   try {
-    started = await dependencies.startSave(request.hlsUrl, ffmpegPath, request.outputFileName);
+    started = await dependencies.startSave(
+      request.hlsUrl,
+      ffmpegPath,
+      request.outputFileName,
+      request.destination,
+    );
   } catch (error) {
     const code = error instanceof SaveStreamError ? error.code : "internal-error";
     await writeTerminalResponse(dependencies, {

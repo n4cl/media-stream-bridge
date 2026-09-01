@@ -73,7 +73,7 @@ test("Native Hostは保存開始と完了を契約順に返す", async () => {
 
   const running = runNativeHost("/opt/homebrew/bin/ffmpeg", {
     readMessage: readStartThenWait({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
     }),
@@ -99,9 +99,9 @@ test("Native Hostは保存開始と完了を契約順に返す", async () => {
   assert.equal(receivedUrl, "https://example.com/master.m3u8");
   assert.equal(receivedFfmpegPath, "/opt/homebrew/bin/ffmpeg");
   assert.deepEqual(responses, [
-    { version: 2, type: "save:started", saveId: "save-1" },
+    { version: 3, type: "save:started", saveId: "save-1" },
     {
-      version: 2,
+      version: 3,
       type: "save:completed",
       saveId: "save-1",
       outputFile: "/safe/output/media-stream-save-1.mp4",
@@ -117,7 +117,7 @@ test("Native Hostは不正な要求をffmpegへ渡さず拒否する", async () 
   let waited = false;
 
   await runNativeHost("/opt/homebrew/bin/ffmpeg", {
-    readMessage: async () => ({ version: 2, type: "save:start", hlsUrl: "file:///tmp/a.m3u8" }),
+    readMessage: async () => ({ version: 3, type: "save:start", hlsUrl: "file:///tmp/a.m3u8" }),
     writeMessage: async (response) => responses.push(response),
     startSave: async () => {
       started = true;
@@ -130,7 +130,23 @@ test("Native Hostは不正な要求をffmpegへ渡さず拒否する", async () 
 
   assert.equal(started, false);
   assert.equal(waited, true);
-  assert.deepEqual(responses, [{ version: 2, type: "save:failed", code: "invalid-request" }]);
+  assert.deepEqual(responses, [{ version: 3, type: "save:failed", code: "invalid-request" }]);
+});
+
+test("Native Hostは古いバージョンの要求を保存先値より先にinvalid-requestとして拒否する", async () => {
+  const responses = [];
+  await runNativeHost("/opt/homebrew/bin/ffmpeg", {
+    readMessage: async () => ({
+      version: 2,
+      type: "save:start",
+      hlsUrl: "https://example.com/master.m3u8",
+      destination: "/tmp",
+    }),
+    writeMessage: async (response) => responses.push(response),
+    startSave: async () => assert.fail("must not start"),
+    waitForDisconnect: async () => {},
+  });
+  assert.deepEqual(responses, [{ version: 3, type: "save:failed", code: "invalid-request" }]);
 });
 
 test("Native Hostは指定名を保存開始へ渡し、無効名は開始前に拒否する", async () => {
@@ -138,7 +154,7 @@ test("Native Hostは指定名を保存開始へ渡し、無効名は開始前に
   let receivedOutputFileName;
   await runNativeHost("/opt/homebrew/bin/ffmpeg", {
     readMessage: readStartThenWait({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
       outputFileName: "episode-01.mp4",
@@ -162,7 +178,7 @@ test("Native Hostは指定名を保存開始へ渡し、無効名は開始前に
   const invalidResponses = [];
   await runNativeHost("/opt/homebrew/bin/ffmpeg", {
     readMessage: async () => ({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
       outputFileName: "../episode.mp4",
@@ -176,7 +192,68 @@ test("Native Hostは指定名を保存開始へ渡し、無効名は開始前に
   });
   assert.equal(started, false);
   assert.deepEqual(invalidResponses, [
-    { version: 2, type: "save:failed", code: "invalid-output-file-name" },
+    { version: 3, type: "save:failed", code: "invalid-output-file-name" },
+  ]);
+});
+
+test("Native Hostは保存先を保存開始へ渡し、不正な値を開始前に拒否する", async () => {
+  let receivedDestination;
+  await runNativeHost("/opt/homebrew/bin/ffmpeg", {
+    readMessage: readStartThenWait({
+      version: 3,
+      type: "save:start",
+      hlsUrl: "https://example.com/master.m3u8",
+      destination: "downloads",
+    }),
+    writeMessage: async () => {},
+    startSave: async (_url, _path, _name, destination) => {
+      receivedDestination = destination;
+      return {
+        saveId: "save-1",
+        outputFile: "/safe/downloads/output.mp4",
+        completed: Promise.resolve("completed"),
+        cancel: () => assert.fail("must not cancel"),
+      };
+    },
+    waitForDisconnect: async () => {},
+  });
+  assert.equal(receivedDestination, "downloads");
+
+  const responses = [];
+  let started = false;
+  await runNativeHost("/opt/homebrew/bin/ffmpeg", {
+    readMessage: async () => ({
+      version: 3,
+      type: "save:start",
+      hlsUrl: "https://example.com/master.m3u8",
+      destination: "/tmp",
+    }),
+    writeMessage: async (response) => responses.push(response),
+    startSave: async () => {
+      started = true;
+      throw new Error("must not start");
+    },
+    waitForDisconnect: async () => {},
+  });
+  assert.equal(started, false);
+  assert.deepEqual(responses, [
+    { version: 3, type: "save:failed", code: "invalid-save-destination" },
+  ]);
+
+  const nonStringResponses = [];
+  await runNativeHost("/opt/homebrew/bin/ffmpeg", {
+    readMessage: async () => ({
+      version: 3,
+      type: "save:start",
+      hlsUrl: "https://example.com/master.m3u8",
+      destination: 1,
+    }),
+    writeMessage: async (response) => nonStringResponses.push(response),
+    startSave: async () => assert.fail("must not start"),
+    waitForDisconnect: async () => {},
+  });
+  assert.deepEqual(nonStringResponses, [
+    { version: 3, type: "save:failed", code: "invalid-save-destination" },
   ]);
 });
 
@@ -185,7 +262,7 @@ test("Native Hostは開始後の同名競合を構造化して返す", async () 
   const error = new SaveStreamError("output-file-exists", "already exists");
   await runNativeHost("/opt/homebrew/bin/ffmpeg", {
     readMessage: readStartThenWait({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
     }),
@@ -199,7 +276,7 @@ test("Native Hostは開始後の同名競合を構造化して返す", async () 
     waitForDisconnect: async () => {},
   });
   assert.deepEqual(responses.at(-1), {
-    version: 2,
+    version: 3,
     type: "save:failed",
     code: "output-file-exists",
   });
@@ -231,7 +308,7 @@ test("Native Hostは要求読み取り失敗の終端応答後に切断を待つ
   });
 
   await waitingForDisconnect;
-  assert.deepEqual(responses, [{ version: 2, type: "save:failed", code: "invalid-request" }]);
+  assert.deepEqual(responses, [{ version: 3, type: "save:failed", code: "invalid-request" }]);
   releaseDisconnect();
   await running;
 });
@@ -243,7 +320,7 @@ test("Native Hostは不正なffmpegパスの終端応答後に切断を待つ", 
 
   await runNativeHost("relative/ffmpeg", {
     readMessage: readStartThenWait({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
     }),
@@ -259,7 +336,7 @@ test("Native Hostは不正なffmpegパスの終端応答後に切断を待つ", 
 
   assert.equal(started, false);
   assert.equal(waited, true);
-  assert.deepEqual(responses, [{ version: 2, type: "save:failed", code: "internal-error" }]);
+  assert.deepEqual(responses, [{ version: 3, type: "save:failed", code: "internal-error" }]);
 });
 
 test("Native Hostは保存失敗の終端応答後に切断を待つ", async () => {
@@ -275,7 +352,7 @@ test("Native Hostは保存失敗の終端応答後に切断を待つ", async () 
 
   const running = runNativeHost("/opt/homebrew/bin/ffmpeg", {
     readMessage: readStartThenWait({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
     }),
@@ -290,7 +367,7 @@ test("Native Hostは保存失敗の終端応答後に切断を待つ", async () 
   });
 
   await waitingForDisconnect;
-  assert.deepEqual(responses, [{ version: 2, type: "save:failed", code: "internal-error" }]);
+  assert.deepEqual(responses, [{ version: 3, type: "save:failed", code: "internal-error" }]);
   releaseDisconnect();
   await running;
 });
@@ -308,7 +385,7 @@ test("Native Hostは開始後の保存失敗を通知してから切断を待つ
 
   const running = runNativeHost("/opt/homebrew/bin/ffmpeg", {
     readMessage: readStartThenWait({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
     }),
@@ -327,8 +404,8 @@ test("Native Hostは開始後の保存失敗を通知してから切断を待つ
 
   await waitingForDisconnect;
   assert.deepEqual(responses, [
-    { version: 2, type: "save:started", saveId: "save-1" },
-    { version: 2, type: "save:failed", code: "internal-error" },
+    { version: 3, type: "save:started", saveId: "save-1" },
+    { version: 3, type: "save:failed", code: "internal-error" },
   ]);
   releaseDisconnect();
   await running;
@@ -347,7 +424,7 @@ test("Native Hostは後始末完了前に保存失敗を通知しない", async 
 
   const running = runNativeHost("/opt/homebrew/bin/ffmpeg", {
     readMessage: readStartThenWait({
-      version: 2,
+      version: 3,
       type: "save:start",
       hlsUrl: "https://example.com/master.m3u8",
     }),
@@ -367,19 +444,19 @@ test("Native Hostは後始末完了前に保存失敗を通知しない", async 
   });
 
   await startedWritten;
-  assert.deepEqual(responses, [{ version: 2, type: "save:started", saveId: "save-1" }]);
+  assert.deepEqual(responses, [{ version: 3, type: "save:started", saveId: "save-1" }]);
 
   finishCleanup();
   await running;
   assert.deepEqual(responses, [
-    { version: 2, type: "save:started", saveId: "save-1" },
-    { version: 2, type: "save:failed", code: "internal-error" },
+    { version: 3, type: "save:started", saveId: "save-1" },
+    { version: 3, type: "save:failed", code: "internal-error" },
   ]);
 });
 
 test("Native Hostはキャンセル後の後始末完了を待ってcancelledを返す", async () => {
   const queue = createMessageQueue({
-    version: 2,
+    version: 3,
     type: "save:start",
     hlsUrl: "https://example.com/master.m3u8",
   });
@@ -408,21 +485,21 @@ test("Native Hostはキャンセル後の後始末完了を待ってcancelledを
     waitForDisconnect: async () => {},
   });
 
-  queue.send({ version: 2, type: "save:cancel", saveId: "save-1" });
+  queue.send({ version: 3, type: "save:cancel", saveId: "save-1" });
   await cancelStarted;
-  assert.deepEqual(responses, [{ version: 2, type: "save:started", saveId: "save-1" }]);
+  assert.deepEqual(responses, [{ version: 3, type: "save:started", saveId: "save-1" }]);
 
   finishSave("cancelled");
   await running;
   assert.deepEqual(responses, [
-    { version: 2, type: "save:started", saveId: "save-1" },
-    { version: 2, type: "save:cancelled", saveId: "save-1" },
+    { version: 3, type: "save:started", saveId: "save-1" },
+    { version: 3, type: "save:cancelled", saveId: "save-1" },
   ]);
 });
 
 test("Native Hostは不一致のキャンセルを拒否して正常保存を継続する", async () => {
   const queue = createMessageQueue({
-    version: 2,
+    version: 3,
     type: "save:start",
     hlsUrl: "https://example.com/master.m3u8",
   });
@@ -443,12 +520,12 @@ test("Native Hostは不一致のキャンセルを拒否して正常保存を継
     waitForDisconnect: async () => {},
   });
 
-  queue.send({ version: 2, type: "save:cancel", saveId: "other-save" });
+  queue.send({ version: 3, type: "save:cancel", saveId: "other-save" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(responses, [
-    { version: 2, type: "save:started", saveId: "save-1" },
+    { version: 3, type: "save:started", saveId: "save-1" },
     {
-      version: 2,
+      version: 3,
       type: "save:cancel-rejected",
       saveId: "other-save",
       code: "save-id-mismatch",
@@ -458,7 +535,7 @@ test("Native Hostは不一致のキャンセルを拒否して正常保存を継
   finishSave("completed");
   await running;
   assert.deepEqual(responses.at(-1), {
-    version: 2,
+    version: 3,
     type: "save:completed",
     saveId: "save-1",
     outputFile: "/safe/output/media-stream-save-1.mp4",
@@ -467,7 +544,7 @@ test("Native Hostは不一致のキャンセルを拒否して正常保存を継
 
 test("Native Hostは終了要求を出せない場合に拒否して正常終了を維持する", async () => {
   const queue = createMessageQueue({
-    version: 2,
+    version: 3,
     type: "save:start",
     hlsUrl: "https://example.com/master.m3u8",
   });
@@ -488,10 +565,10 @@ test("Native Hostは終了要求を出せない場合に拒否して正常終了
     waitForDisconnect: async () => {},
   });
 
-  queue.send({ version: 2, type: "save:cancel", saveId: "save-1" });
+  queue.send({ version: 3, type: "save:cancel", saveId: "save-1" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(responses.at(-1), {
-    version: 2,
+    version: 3,
     type: "save:cancel-rejected",
     saveId: "save-1",
     code: "save-not-cancellable",
@@ -504,7 +581,7 @@ test("Native Hostは終了要求を出せない場合に拒否して正常終了
 
 test("Native Hostは保存中の壊れた要求で対象を終了して構造化失敗を返す", async () => {
   const queue = createMessageQueue({
-    version: 2,
+    version: 3,
     type: "save:start",
     hlsUrl: "https://example.com/master.m3u8",
   });
@@ -532,13 +609,13 @@ test("Native Hostは保存中の壊れた要求で対象を終了して構造化
     waitForDisconnect: async () => {},
   });
 
-  queue.send({ version: 2, type: "unknown" });
+  queue.send({ version: 3, type: "unknown" });
   await cancellationStarted;
   finishSave("cancelled");
   await running;
   assert.deepEqual(responses, [
-    { version: 2, type: "save:started", saveId: "save-1" },
-    { version: 2, type: "save:failed", code: "internal-error" },
+    { version: 3, type: "save:started", saveId: "save-1" },
+    { version: 3, type: "save:failed", code: "internal-error" },
   ]);
 });
 

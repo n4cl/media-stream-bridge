@@ -23,6 +23,7 @@ export interface SaveCandidateMessage {
   hlsUrl?: unknown;
   tabId?: unknown;
   outputFileName?: unknown;
+  destination?: unknown;
 }
 
 export type SaveCandidateResponse =
@@ -36,6 +37,8 @@ export type SaveCandidateResponse =
         | "native-host-unavailable"
         | "native-host-invalid-response"
         | "invalid-output-file-name"
+        | "invalid-save-destination"
+        | "output-directory-unavailable"
         | "output-file-exists";
     };
 
@@ -74,6 +77,8 @@ export type SaveJobStatus =
         | "native-host-unavailable"
         | "native-host-invalid-response"
         | "invalid-output-file-name"
+        | "invalid-save-destination"
+        | "output-directory-unavailable"
         | "output-file-exists"
         | "invalid-request"
         | "ffmpeg-start-failed"
@@ -132,6 +137,8 @@ export function isSaveCandidateResponse(value: unknown): value is SaveCandidateR
       response.error === "native-host-unavailable" ||
       response.error === "native-host-invalid-response" ||
       response.error === "invalid-output-file-name" ||
+      response.error === "invalid-save-destination" ||
+      response.error === "output-directory-unavailable" ||
       response.error === "output-file-exists")
   );
 }
@@ -196,6 +203,8 @@ function isSaveJobStatus(value: unknown): value is SaveJobStatus {
       job.error === "native-host-invalid-response" ||
       job.error === "invalid-request" ||
       job.error === "invalid-output-file-name" ||
+      job.error === "invalid-save-destination" ||
+      job.error === "output-directory-unavailable" ||
       job.error === "output-file-exists" ||
       job.error === "ffmpeg-start-failed" ||
       job.error === "ffmpeg-exit" ||

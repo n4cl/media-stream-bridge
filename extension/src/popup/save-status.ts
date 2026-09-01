@@ -42,6 +42,12 @@ export function saveJobStatusText(job: SaveJobStatus | null): string | null {
   if (job.error === "output-file-exists") {
     return "同名のファイルが既にあります。別のファイル名を指定してください。";
   }
+  if (job.error === "invalid-save-destination") {
+    return "保存先が無効です。もう一度選択してください。";
+  }
+  if (job.error === "output-directory-unavailable") {
+    return "保存先を利用できません。フォルダの権限を確認してください。";
+  }
   return "保存に失敗しました。";
 }
 

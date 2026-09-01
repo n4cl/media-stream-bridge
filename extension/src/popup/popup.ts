@@ -9,6 +9,7 @@ import {
   type SaveJobStatus,
   type SaveStatusMessage,
 } from "../shared/messages.js";
+import { createSaveRequest } from "./save-request.js";
 import {
   cancellableSaveId,
   isActiveSaveJob,
@@ -32,6 +33,7 @@ const list = requireElement<HTMLDivElement>("#candidate-list");
 const saveButton = requireElement<HTMLButtonElement>("#save-button");
 const saveWithSettingsButton = requireElement<HTMLButtonElement>("#save-with-settings-button");
 const outputFileName = requireElement<HTMLInputElement>("#output-file-name");
+const destination = requireElement<HTMLSelectElement>("#save-destination");
 const cancelSaveButton = requireElement<HTMLButtonElement>("#cancel-save-button");
 const scheduler: TimerScheduler = {
   setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
@@ -177,12 +179,13 @@ form.addEventListener("submit", async (event) => {
   let keepSaveDisabled = false;
   try {
     const isConfiguredSave = event.submitter === saveWithSettingsButton;
-    const message: SaveCandidateMessage = {
-      type: "save:start",
-      tabId: currentTabId,
-      hlsUrl: selected,
-      ...(isConfiguredSave ? { outputFileName: outputFileName.value } : {}),
-    };
+    const message: SaveCandidateMessage = createSaveRequest(
+      currentTabId,
+      selected,
+      isConfiguredSave
+        ? { outputFileName: outputFileName.value, destination: destination.value }
+        : undefined,
+    );
     const response: unknown = await browser.runtime.sendMessage(message);
     if (!isSaveCandidateResponse(response)) {
       status.textContent = "保存結果を確認できませんでした。";
@@ -194,6 +197,10 @@ form.addEventListener("submit", async (event) => {
       status.textContent = "ファイル名が無効です。.mp4 で終わる名前を入力してください。";
     } else if (!response.ok && response.error === "output-file-exists") {
       status.textContent = "同名のファイルが既にあります。別のファイル名を指定してください。";
+    } else if (!response.ok && response.error === "invalid-save-destination") {
+      status.textContent = "保存先が無効です。もう一度選択してください。";
+    } else if (!response.ok && response.error === "output-directory-unavailable") {
+      status.textContent = "保存先を利用できません。フォルダの権限を確認してください。";
     } else if (!response.ok) {
       status.textContent = "保存を開始できませんでした。Native Host の設定を確認してください。";
     } else if (response.response.type === "save:started") {

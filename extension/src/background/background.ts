@@ -74,6 +74,7 @@ function saveWithNativeHost(
   attempt: SaveJobAttempt,
   hlsUrl: string,
   outputFileName?: string,
+  destination?: string,
 ): Promise<SaveCandidateResponse> {
   return new Promise((resolve) => {
     let settled = false;
@@ -173,6 +174,7 @@ function saveWithNativeHost(
         type: "save:start",
         hlsUrl,
         ...(outputFileName === undefined ? {} : { outputFileName }),
+        ...(destination === undefined ? {} : { destination }),
       });
     } catch {
       failAttemptUnlessTerminal(tabId, attempt, "native-host-unavailable");
@@ -232,9 +234,22 @@ browser.runtime.onMessage.addListener((message: unknown) => {
       const response: SaveCandidateResponse = { ok: false, error: "invalid-output-file-name" };
       return Promise.resolve(response);
     }
+    if (message.destination !== undefined && typeof message.destination !== "string") {
+      saveJobAttemptsByTab.set(message.tabId, {
+        status: { state: "failed", error: "invalid-save-destination" },
+      });
+      const response: SaveCandidateResponse = { ok: false, error: "invalid-save-destination" };
+      return Promise.resolve(response);
+    }
     const attempt: SaveJobAttempt = { status: { state: "starting" } };
     saveJobAttemptsByTab.set(message.tabId, attempt);
-    return saveWithNativeHost(message.tabId, attempt, message.hlsUrl, message.outputFileName);
+    return saveWithNativeHost(
+      message.tabId,
+      attempt,
+      message.hlsUrl,
+      message.outputFileName,
+      message.destination,
+    );
   }
 
   if (isSaveCancelMessage(message)) {

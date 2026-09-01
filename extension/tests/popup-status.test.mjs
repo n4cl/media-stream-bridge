@@ -68,6 +68,10 @@ test("保存ジョブ状態をPopup向け文言へ変換する", () => {
     saveJobStatusText({ state: "failed", error: "output-file-exists" }),
     "同名のファイルが既にあります。別のファイル名を指定してください。",
   );
+  assert.equal(
+    saveJobStatusText({ state: "failed", error: "output-directory-unavailable" }),
+    "保存先を利用できません。フォルダの権限を確認してください。",
+  );
 });
 
 test("キャンセル対象は実行中の保存だけに限定する", () => {

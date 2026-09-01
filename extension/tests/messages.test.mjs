@@ -98,4 +98,6 @@ test("重複保存開始エラーを保存開始レスポンスとして検証�
   assert.equal(isSaveCandidateResponse({ ok: false, error: "save-already-running" }), true);
   assert.equal(isSaveCandidateResponse({ ok: false, error: "invalid-output-file-name" }), true);
   assert.equal(isSaveCandidateResponse({ ok: false, error: "output-file-exists" }), true);
+  assert.equal(isSaveCandidateResponse({ ok: false, error: "invalid-save-destination" }), true);
+  assert.equal(isSaveCandidateResponse({ ok: false, error: "output-directory-unavailable" }), true);
 });

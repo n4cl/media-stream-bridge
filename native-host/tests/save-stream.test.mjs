@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { constants } from "node:fs";
 import test from "node:test";
 
 import {
   createFfmpegSpawner,
+  createOutputDirectoryPreparer,
   createOutputFileExists,
   isAllowedHlsUrl,
   isAllowedOutputFileName,
+  isAllowedSaveDestination,
   MAX_OUTPUT_FILE_NAME_BYTES,
+  resolveOutputDirectory,
   startSaveStream,
 } from "../build/native-host/src/save-stream.js";
 
@@ -32,6 +36,114 @@ test("Hostは保存ファイル名をbasenameのmp4へ制限する", () => {
   ]) {
     assert.equal(isAllowedOutputFileName(value), false, value);
   }
+});
+
+test("Hostは許可した保存先IDだけをホームディレクトリ基準の保存先へ解決する", () => {
+  assert.equal(isAllowedSaveDestination("movies"), true);
+  assert.equal(isAllowedSaveDestination("downloads"), true);
+  assert.equal(isAllowedSaveDestination("/tmp"), false);
+  assert.equal(
+    resolveOutputDirectory("movies", "/Users/test"),
+    "/Users/test/Movies/Media Stream Bridge",
+  );
+  assert.equal(
+    resolveOutputDirectory("downloads", "/Users/test"),
+    "/Users/test/Downloads/Media Stream Bridge",
+  );
+});
+
+test("Hostは保存先を作成後に書込み可能か確認する", async () => {
+  const calls = [];
+  const prepareDirectory = createOutputDirectoryPreparer(
+    async (directory) => calls.push(`mkdir:${directory}`),
+    async (directory, mode) => calls.push(`access:${directory}:${mode}`),
+  );
+  await prepareDirectory("/safe/output");
+  assert.deepEqual(calls, ["mkdir:/safe/output", `access:/safe/output:${constants.W_OK}`]);
+
+  const unavailableDirectory = createOutputDirectoryPreparer(
+    async () => {},
+    async () => {
+      throw new Error("not writable");
+    },
+  );
+  await assert.rejects(unavailableDirectory("/safe/output"));
+});
+
+test("Hostは選択した保存先内で途中ファイルを公開し、保存先の準備失敗を構造化する", async () => {
+  const child = new EventEmitter();
+  const calls = [];
+  const started = await startSaveStream(
+    "https://example.com/master.m3u8",
+    {
+      makeDirectory: async (directory) => calls.push(`mkdir:${directory}`),
+      outputFileExists: async () => false,
+      removeFile: async (file) => calls.push(`remove:${file}`),
+      publishFile: async (temporaryFile, outputFile) =>
+        calls.push(`publish:${temporaryFile}:${outputFile}`),
+      spawnFfmpeg: (args) => {
+        calls.push(`spawn:${args.at(-1)}`);
+        return child;
+      },
+      createSaveId: () => "unique-id",
+      outputDirectoryForDestination: (destination) => `/safe/${destination}`,
+    },
+    undefined,
+    "downloads",
+  );
+  child.emit("close", 0);
+  await started.completed;
+  assert.deepEqual(calls, [
+    "mkdir:/safe/downloads",
+    "spawn:/safe/downloads/.media-stream-unique-id.partial.mp4",
+    "publish:/safe/downloads/.media-stream-unique-id.partial.mp4:/safe/downloads/media-stream-unique-id.mp4",
+    "remove:/safe/downloads/.media-stream-unique-id.partial.mp4",
+  ]);
+
+  await assert.rejects(
+    startSaveStream(
+      "https://example.com/master.m3u8",
+      {
+        makeDirectory: async () => {
+          throw new Error("permission denied");
+        },
+        outputFileExists: async () => false,
+        removeFile: async () => {},
+        publishFile: async () => {},
+        spawnFfmpeg: () => new EventEmitter(),
+        createSaveId: () => "unique-id",
+        outputDirectoryForDestination: () => "/safe/downloads",
+      },
+      undefined,
+      "downloads",
+    ),
+    { code: "output-directory-unavailable" },
+  );
+});
+
+test("Hostは未知の保存先をffmpeg起動前に拒否する", async () => {
+  let spawned = false;
+  await assert.rejects(
+    startSaveStream(
+      "https://example.com/master.m3u8",
+      {
+        makeDirectory: async () => {},
+        outputFileExists: async () => false,
+        removeFile: async () => {},
+        publishFile: async () => {},
+        spawnFfmpeg: () => {
+          spawned = true;
+          return new EventEmitter();
+        },
+        createSaveId: () => "unique-id",
+        outputDirectory: "/safe/output",
+      },
+      undefined,
+      "elsewhere",
+    ),
+    { code: "invalid-save-destination" },
+  );
+  assert.equal(spawned, false);
 });
 
 test("Hostは指定名へ排他的に公開してから途中ファイルを削除する", async () => {
@@ -62,6 +174,33 @@ test("Hostは指定名へ排他的に公開してから途中ファイルを削�
     "publish:/safe/output/.media-stream-unique-id.partial.mp4:/safe/output/episode-01.mp4",
     "remove:/safe/output/.media-stream-unique-id.partial.mp4",
   ]);
+});
+
+test("Hostは既存の最終ファイルをffmpeg起動前に拒否する", async () => {
+  const calls = [];
+  await assert.rejects(
+    startSaveStream(
+      "https://example.com/master.m3u8",
+      {
+        makeDirectory: async (directory) => calls.push(`mkdir:${directory}`),
+        outputFileExists: async (file) => {
+          calls.push(`exists:${file}`);
+          return true;
+        },
+        removeFile: async (file) => calls.push(`remove:${file}`),
+        publishFile: async () => calls.push("publish"),
+        spawnFfmpeg: () => {
+          calls.push("spawn");
+          return new EventEmitter();
+        },
+        createSaveId: () => "unique-id",
+        outputDirectory: "/safe/output",
+      },
+      "episode-01.mp4",
+    ),
+    { code: "output-file-exists" },
+  );
+  assert.deepEqual(calls, ["mkdir:/safe/output", "exists:/safe/output/episode-01.mp4"]);
 });
 
 test("Hostは公開失敗を同名競合と内部エラーに区別し、途中ファイルだけを後始末する", async () => {
@@ -172,7 +311,7 @@ test("Hostは出力ファイルの不存在だけを削除可能と判断する"
   });
 });
 
-test("Hostは出力ファイルを確認できない場合にffmpegを起動しない", async () => {
+test("Hostは最終ファイルを確認できない場合にffmpegを起動しない", async () => {
   let spawned = false;
   await assert.rejects(
     startSaveStream("https://example.com/master.m3u8", {
@@ -190,7 +329,7 @@ test("Hostは出力ファイルを確認できない場合にffmpegを起動し�
       createSaveId: () => "unique-id",
       outputDirectory: "/safe/output",
     }),
-    { code: "EACCES" },
+    { code: "output-directory-unavailable" },
   );
   assert.equal(spawned, false);
 });
@@ -216,6 +355,7 @@ test("Hostはffmpegの同期的な起動失敗後に出力ファイルを削除�
   );
   assert.deepEqual(calls, [
     "make-directory",
+    "exists",
     "exists",
     "spawn",
     "remove:/safe/output/.media-stream-unique-id.partial.mp4",

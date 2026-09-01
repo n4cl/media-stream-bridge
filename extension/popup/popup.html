@@ -22,6 +22,12 @@
             <summary>設定して保存</summary>
             <label for="output-file-name">ファイル名 (.mp4)</label>
             <input id="output-file-name" name="output-file-name" type="text" maxlength="240" autocomplete="off">
+            <p>空欄の場合はランダムID付きのファイル名を使用します。</p>
+            <label for="save-destination">保存先</label>
+            <select id="save-destination" name="save-destination">
+              <option value="movies" selected>ムービー</option>
+              <option value="downloads">ダウンロード</option>
+            </select>
             <button id="save-with-settings-button" type="submit">この設定で保存</button>
           </details>
         </fieldset>
