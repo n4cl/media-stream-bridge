@@ -1,9 +1,10 @@
-export const NATIVE_MESSAGE_VERSION = 1;
+export const NATIVE_MESSAGE_VERSION = 2;
 
 export interface SaveStreamRequest {
   version: typeof NATIVE_MESSAGE_VERSION;
   type: "save:start";
   hlsUrl: string;
+  outputFileName?: string;
 }
 
 export interface SaveCancelRequest {
@@ -43,7 +44,13 @@ export interface SaveCancelRejectedResponse {
 export interface SaveFailedResponse {
   version: typeof NATIVE_MESSAGE_VERSION;
   type: "save:failed";
-  code: "invalid-request" | "ffmpeg-start-failed" | "ffmpeg-exit" | "internal-error";
+  code:
+    | "invalid-request"
+    | "invalid-output-file-name"
+    | "output-file-exists"
+    | "ffmpeg-start-failed"
+    | "ffmpeg-exit"
+    | "internal-error";
 }
 
 export type NativeHostResponse =
@@ -62,7 +69,8 @@ export function isSaveStreamRequest(value: unknown): value is SaveStreamRequest 
     isRecord(value) &&
     value.version === NATIVE_MESSAGE_VERSION &&
     value.type === "save:start" &&
-    typeof value.hlsUrl === "string"
+    typeof value.hlsUrl === "string" &&
+    (value.outputFileName === undefined || typeof value.outputFileName === "string")
   );
 }
 
@@ -115,6 +123,8 @@ export function isNativeHostResponse(value: unknown): value is NativeHostRespons
   return (
     value.type === "save:failed" &&
     (value.code === "invalid-request" ||
+      value.code === "invalid-output-file-name" ||
+      value.code === "output-file-exists" ||
       value.code === "ffmpeg-start-failed" ||
       value.code === "ffmpeg-exit" ||
       value.code === "internal-error")

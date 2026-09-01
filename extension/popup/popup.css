@@ -57,3 +57,23 @@ hr {
   border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   margin: 10px 0;
 }
+
+#save-settings {
+  margin-top: 12px;
+}
+
+#save-settings summary {
+  cursor: pointer;
+}
+
+#save-settings label,
+#save-settings input,
+#save-with-settings-button {
+  display: block;
+  margin-top: 8px;
+}
+
+#output-file-name {
+  box-sizing: border-box;
+  width: 100%;
+}

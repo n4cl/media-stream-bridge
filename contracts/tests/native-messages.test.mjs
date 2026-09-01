@@ -19,10 +19,36 @@ test("Native Host契約はバージョン付きの保存開始要求だけを受
     true,
   );
   assert.equal(
-    isSaveStreamRequest({ version: 2, type: "save:start", hlsUrl: "https://example.com/a.m3u8" }),
+    isSaveStreamRequest({ version: 3, type: "save:start", hlsUrl: "https://example.com/a.m3u8" }),
     false,
   );
-  assert.equal(isSaveStreamRequest({ version: 1, type: "save:start", hlsUrl: 1 }), false);
+  assert.equal(isSaveStreamRequest({ version: 2, type: "save:start", hlsUrl: 1 }), false);
+  assert.equal(
+    isSaveStreamRequest({
+      version: 2,
+      type: "save:start",
+      hlsUrl: "https://example.com/a.m3u8",
+      outputFileName: "episode-01.mp4",
+    }),
+    true,
+  );
+  assert.equal(
+    isSaveStreamRequest({
+      version: 2,
+      type: "save:start",
+      hlsUrl: "https://example.com/a.m3u8",
+      outputFileName: 1,
+    }),
+    false,
+  );
+  assert.equal(
+    isSaveStreamRequest({
+      version: 1,
+      type: "save:start",
+      hlsUrl: "https://example.com/a.m3u8",
+    }),
+    false,
+  );
 });
 
 test("Native Host契約は保存ID付きのキャンセル要求を検証する", () => {
@@ -30,19 +56,19 @@ test("Native Host契約は保存ID付きのキャンセル要求を検証する"
     isSaveCancelRequest({ version: NATIVE_MESSAGE_VERSION, type: "save:cancel", saveId: "id" }),
     true,
   );
-  assert.equal(isSaveCancelRequest({ version: 1, type: "save:cancel", saveId: "" }), false);
+  assert.equal(isSaveCancelRequest({ version: 2, type: "save:cancel", saveId: "" }), false);
   assert.equal(
-    isNativeHostRequest({ version: 1, type: "save:start", hlsUrl: "https://a/b.m3u8" }),
+    isNativeHostRequest({ version: 2, type: "save:start", hlsUrl: "https://a/b.m3u8" }),
     true,
   );
-  assert.equal(isNativeHostRequest({ version: 1, type: "save:cancel", saveId: "id" }), true);
+  assert.equal(isNativeHostRequest({ version: 2, type: "save:cancel", saveId: "id" }), true);
 });
 
 test("Native Host契約は開始、完了、構造化失敗レスポンスを検証する", () => {
-  assert.equal(isNativeHostResponse({ version: 1, type: "save:started", saveId: "id" }), true);
+  assert.equal(isNativeHostResponse({ version: 2, type: "save:started", saveId: "id" }), true);
   assert.equal(
     isNativeHostResponse({
-      version: 1,
+      version: 2,
       type: "save:completed",
       saveId: "id",
       outputFile: "/tmp/a.mp4",
@@ -50,18 +76,26 @@ test("Native Host契約は開始、完了、構造化失敗レスポンスを検
     true,
   );
   assert.equal(
-    isNativeHostResponse({ version: 1, type: "save:failed", code: "ffmpeg-exit" }),
+    isNativeHostResponse({ version: 2, type: "save:failed", code: "ffmpeg-exit" }),
     true,
   );
-  assert.equal(isNativeHostResponse({ version: 1, type: "save:cancelled", saveId: "id" }), true);
+  assert.equal(isNativeHostResponse({ version: 2, type: "save:cancelled", saveId: "id" }), true);
   assert.equal(
     isNativeHostResponse({
-      version: 1,
+      version: 2,
       type: "save:cancel-rejected",
       saveId: "other-id",
       code: "save-id-mismatch",
     }),
     true,
   );
-  assert.equal(isNativeHostResponse({ version: 1, type: "save:failed", code: "unknown" }), false);
+  assert.equal(isNativeHostResponse({ version: 2, type: "save:failed", code: "unknown" }), false);
+  assert.equal(
+    isNativeHostResponse({ version: 2, type: "save:failed", code: "invalid-output-file-name" }),
+    true,
+  );
+  assert.equal(
+    isNativeHostResponse({ version: 2, type: "save:failed", code: "output-file-exists" }),
+    true,
+  );
 });

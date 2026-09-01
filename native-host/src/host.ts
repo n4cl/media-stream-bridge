@@ -12,6 +12,7 @@ import { readNativeMessage, writeNativeMessage } from "./framing.js";
 import {
   createDefaultDependencies,
   isAllowedHlsUrl,
+  isAllowedOutputFileName,
   SaveStreamError,
   type StartedSave,
   startSaveStream,
@@ -66,7 +67,7 @@ export function waitForStdinDisconnect(
 export interface NativeHostDependencies {
   readMessage(signal?: AbortSignal): Promise<unknown | undefined>;
   writeMessage(value: unknown): Promise<void>;
-  startSave(hlsUrl: string, ffmpegPath: string): Promise<StartedSave>;
+  startSave(hlsUrl: string, ffmpegPath: string, outputFileName?: string): Promise<StartedSave>;
   waitForDisconnect(): Promise<void>;
 }
 
@@ -74,8 +75,8 @@ function defaultDependencies(): NativeHostDependencies {
   return {
     readMessage: (signal) => readNativeMessage(process.stdin, signal),
     writeMessage: (value) => writeNativeMessage(process.stdout, value),
-    startSave: (hlsUrl, ffmpegPath) =>
-      startSaveStream(hlsUrl, createDefaultDependencies(ffmpegPath)),
+    startSave: (hlsUrl, ffmpegPath, outputFileName) =>
+      startSaveStream(hlsUrl, createDefaultDependencies(ffmpegPath), outputFileName),
     waitForDisconnect: () => waitForStdinDisconnect(process.stdin as Readable),
   };
 }
@@ -97,7 +98,13 @@ async function writeTerminalResponse(
     | {
         version: typeof NATIVE_MESSAGE_VERSION;
         type: "save:failed";
-        code: "invalid-request" | "ffmpeg-start-failed" | "ffmpeg-exit" | "internal-error";
+        code:
+          | "invalid-request"
+          | "invalid-output-file-name"
+          | "output-file-exists"
+          | "ffmpeg-start-failed"
+          | "ffmpeg-exit"
+          | "internal-error";
       },
 ): Promise<void> {
   await dependencies.writeMessage(response);
@@ -141,6 +148,15 @@ export async function runNativeHost(
     return;
   }
 
+  if (request.outputFileName !== undefined && !isAllowedOutputFileName(request.outputFileName)) {
+    await writeTerminalResponse(dependencies, {
+      version: NATIVE_MESSAGE_VERSION,
+      type: "save:failed",
+      code: "invalid-output-file-name",
+    });
+    return;
+  }
+
   if (typeof ffmpegPath !== "string" || !isAbsolute(ffmpegPath)) {
     await writeTerminalResponse(dependencies, {
       version: NATIVE_MESSAGE_VERSION,
@@ -152,7 +168,7 @@ export async function runNativeHost(
 
   let started: StartedSave;
   try {
-    started = await dependencies.startSave(request.hlsUrl, ffmpegPath);
+    started = await dependencies.startSave(request.hlsUrl, ffmpegPath, request.outputFileName);
   } catch (error) {
     const code = error instanceof SaveStreamError ? error.code : "internal-error";
     await writeTerminalResponse(dependencies, {

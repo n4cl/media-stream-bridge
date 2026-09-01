@@ -36,6 +36,12 @@ export function saveJobStatusText(job: SaveJobStatus | null): string | null {
   if (job.state === "cancelled") {
     return "保存をキャンセルしました。";
   }
+  if (job.error === "invalid-output-file-name") {
+    return "ファイル名が無効です。.mp4 で終わる名前を入力してください。";
+  }
+  if (job.error === "output-file-exists") {
+    return "同名のファイルが既にあります。別のファイル名を指定してください。";
+  }
   return "保存に失敗しました。";
 }
 

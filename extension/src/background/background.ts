@@ -73,6 +73,7 @@ function saveWithNativeHost(
   tabId: number,
   attempt: SaveJobAttempt,
   hlsUrl: string,
+  outputFileName?: string,
 ): Promise<SaveCandidateResponse> {
   return new Promise((resolve) => {
     let settled = false;
@@ -167,7 +168,12 @@ function saveWithNativeHost(
       settle({ ok: false, error: "native-host-unavailable" });
     });
     try {
-      port.postMessage({ version: NATIVE_MESSAGE_VERSION, type: "save:start", hlsUrl });
+      port.postMessage({
+        version: NATIVE_MESSAGE_VERSION,
+        type: "save:start",
+        hlsUrl,
+        ...(outputFileName === undefined ? {} : { outputFileName }),
+      });
     } catch {
       failAttemptUnlessTerminal(tabId, attempt, "native-host-unavailable");
       settle({ ok: false, error: "native-host-unavailable" });
@@ -219,9 +225,16 @@ browser.runtime.onMessage.addListener((message: unknown) => {
       const response: SaveCandidateResponse = { ok: false, error: "invalid-hls-url" };
       return Promise.resolve(response);
     }
+    if (message.outputFileName !== undefined && typeof message.outputFileName !== "string") {
+      saveJobAttemptsByTab.set(message.tabId, {
+        status: { state: "failed", error: "invalid-output-file-name" },
+      });
+      const response: SaveCandidateResponse = { ok: false, error: "invalid-output-file-name" };
+      return Promise.resolve(response);
+    }
     const attempt: SaveJobAttempt = { status: { state: "starting" } };
     saveJobAttemptsByTab.set(message.tabId, attempt);
-    return saveWithNativeHost(message.tabId, attempt, message.hlsUrl);
+    return saveWithNativeHost(message.tabId, attempt, message.hlsUrl, message.outputFileName);
   }
 
   if (isSaveCancelMessage(message)) {

@@ -96,4 +96,6 @@ test("保存キャンセルメッセージは種別だけを判定し、値の�
 
 test("重複保存開始エラーを保存開始レスポンスとして検証する", () => {
   assert.equal(isSaveCandidateResponse({ ok: false, error: "save-already-running" }), true);
+  assert.equal(isSaveCandidateResponse({ ok: false, error: "invalid-output-file-name" }), true);
+  assert.equal(isSaveCandidateResponse({ ok: false, error: "output-file-exists" }), true);
 });

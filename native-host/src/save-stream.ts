@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, rm } from "node:fs/promises";
+import { access, link, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -15,6 +15,7 @@ export interface SaveStreamDependencies {
   makeDirectory(path: string): Promise<void>;
   outputFileExists(path: string): Promise<boolean>;
   removeFile(path: string): Promise<void>;
+  publishFile(temporaryFile: string, outputFile: string): Promise<void>;
   spawnFfmpeg(args: string[]): SpawnedProcess;
   createSaveId(): string;
   outputDirectory: string;
@@ -22,7 +23,12 @@ export interface SaveStreamDependencies {
 
 export class SaveStreamError extends Error {
   constructor(
-    readonly code: "ffmpeg-start-failed" | "ffmpeg-exit" | "internal-error",
+    readonly code:
+      | "invalid-output-file-name"
+      | "output-file-exists"
+      | "ffmpeg-start-failed"
+      | "ffmpeg-exit"
+      | "internal-error",
     message: string,
   ) {
     super(message);
@@ -78,6 +84,9 @@ export function createDefaultDependencies(ffmpegPath: string): SaveStreamDepende
     removeFile: async (file) => {
       await rm(file, { force: true });
     },
+    // link(2) is an exclusive publish operation: it fails with EEXIST instead of
+    // replacing an existing final file. Both paths are in outputDirectory.
+    publishFile: link,
     spawnFfmpeg: createFfmpegSpawner(ffmpegPath),
     createSaveId: randomUUID,
     outputDirectory: join(homedir(), "Movies", "Media Stream Bridge"),
@@ -96,6 +105,32 @@ export function isAllowedHlsUrl(value: string): boolean {
   }
 }
 
+// macOS allows a 255-byte path component. Leave room below that limit so the
+// same contract remains usable on filesystems with a slightly smaller limit.
+export const MAX_OUTPUT_FILE_NAME_BYTES = 240;
+
+function hasControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f;
+  });
+}
+
+export function isAllowedOutputFileName(value: string): boolean {
+  const byteLength = Buffer.byteLength(value, "utf8");
+  return (
+    value.length > 0 &&
+    byteLength <= MAX_OUTPUT_FILE_NAME_BYTES &&
+    value.trim() === value &&
+    !value.startsWith(".") &&
+    value.toLowerCase().endsWith(".mp4") &&
+    !value.includes("/") &&
+    !value.includes("\\") &&
+    !hasControlCharacter(value) &&
+    !isAbsolute(value)
+  );
+}
+
 export interface StartedSave {
   saveId: string;
   outputFile: string;
@@ -103,17 +138,13 @@ export interface StartedSave {
   cancel(): { ok: true } | { ok: false; code: "save-not-cancellable" | "cancel-failed" };
 }
 
-async function cleanupFailedSave(
-  outputFile: string,
-  outputFileExisted: boolean,
+async function cleanupTemporarySave(
+  temporaryFile: string,
   error: SaveStreamError,
   dependencies: SaveStreamDependencies,
 ): Promise<SaveStreamError> {
-  if (outputFileExisted) {
-    return error;
-  }
   try {
-    await dependencies.removeFile(outputFile);
+    await dependencies.removeFile(temporaryFile);
     return error;
   } catch {
     return new SaveStreamError("internal-error", "failed to remove incomplete output file");
@@ -123,24 +154,34 @@ async function cleanupFailedSave(
 export async function startSaveStream(
   hlsUrl: string,
   dependencies: SaveStreamDependencies,
+  outputFileName?: string,
 ): Promise<StartedSave> {
   if (!isAllowedHlsUrl(hlsUrl)) {
     throw new SaveStreamError("ffmpeg-exit", "The stream URL is not an HTTP(S) HLS playlist");
   }
 
   const saveId = dependencies.createSaveId();
-  const outputFile = join(dependencies.outputDirectory, `media-stream-${saveId}.mp4`);
+  if (outputFileName !== undefined && !isAllowedOutputFileName(outputFileName)) {
+    throw new SaveStreamError("invalid-output-file-name", "invalid output file name");
+  }
+  const outputFile = join(
+    dependencies.outputDirectory,
+    outputFileName ?? `media-stream-${saveId}.mp4`,
+  );
+  const temporaryFile = join(dependencies.outputDirectory, `.media-stream-${saveId}.partial.mp4`);
   await dependencies.makeDirectory(dependencies.outputDirectory);
-  const outputFileExisted = await dependencies.outputFileExists(outputFile);
+  const temporaryFileExisted = await dependencies.outputFileExists(temporaryFile);
+  if (temporaryFileExisted) {
+    throw new SaveStreamError("internal-error", "temporary output file already exists");
+  }
 
-  const args = ["-nostdin", "-i", hlsUrl, "-c", "copy", "-n", outputFile];
+  const args = ["-nostdin", "-i", hlsUrl, "-c", "copy", "-n", temporaryFile];
   let child: SpawnedProcess;
   try {
     child = dependencies.spawnFfmpeg(args);
   } catch {
-    throw await cleanupFailedSave(
-      outputFile,
-      outputFileExisted,
+    throw await cleanupTemporarySave(
+      temporaryFile,
       new SaveStreamError("ffmpeg-start-failed", "ffmpeg could not be started"),
       dependencies,
     );
@@ -153,16 +194,15 @@ export async function startSaveStream(
         return;
       }
       settled = true;
-      void cleanupFailedSave(outputFile, outputFileExisted, error, dependencies).then(reject);
+      void cleanupTemporarySave(temporaryFile, error, dependencies).then(reject);
     };
     const cancel = (): void => {
       if (settled) {
         return;
       }
       settled = true;
-      void cleanupFailedSave(
-        outputFile,
-        outputFileExisted,
+      void cleanupTemporarySave(
+        temporaryFile,
         new SaveStreamError("ffmpeg-exit", "ffmpeg was cancelled"),
         dependencies,
       ).then(() => resolve("cancelled"), reject);
@@ -180,7 +220,28 @@ export async function startSaveStream(
       }
       if (code === 0) {
         settled = true;
-        resolve("completed");
+        void dependencies.publishFile(temporaryFile, outputFile).then(
+          async () => {
+            try {
+              await dependencies.removeFile(temporaryFile);
+              resolve("completed");
+            } catch {
+              reject(
+                new SaveStreamError("internal-error", "failed to remove temporary output file"),
+              );
+            }
+          },
+          async (error: unknown) => {
+            const saveError =
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              error.code === "EEXIST"
+                ? new SaveStreamError("output-file-exists", "output file already exists")
+                : new SaveStreamError("internal-error", "failed to publish output file");
+            reject(await cleanupTemporarySave(temporaryFile, saveError, dependencies));
+          },
+        );
         return;
       }
       if (cancellationRequested) {
@@ -220,8 +281,9 @@ export async function startSaveStream(
 export async function saveStream(
   hlsUrl: string,
   dependencies: SaveStreamDependencies,
+  outputFileName?: string,
 ): Promise<{ saveId: string; outputFile: string }> {
-  const started = await startSaveStream(hlsUrl, dependencies);
+  const started = await startSaveStream(hlsUrl, dependencies, outputFileName);
   await started.completed;
   return { saveId: started.saveId, outputFile: started.outputFile };
 }

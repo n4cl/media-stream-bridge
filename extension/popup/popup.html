@@ -18,6 +18,12 @@
           <legend>保存するストリームを選択</legend>
           <div id="candidate-list"></div>
           <button id="save-button" type="submit">保存</button>
+          <details id="save-settings">
+            <summary>設定して保存</summary>
+            <label for="output-file-name">ファイル名 (.mp4)</label>
+            <input id="output-file-name" name="output-file-name" type="text" maxlength="240" autocomplete="off">
+            <button id="save-with-settings-button" type="submit">この設定で保存</button>
+          </details>
         </fieldset>
       </form>
     </main>

@@ -22,6 +22,7 @@ export interface SaveCandidateMessage {
   type: "save:start";
   hlsUrl?: unknown;
   tabId?: unknown;
+  outputFileName?: unknown;
 }
 
 export type SaveCandidateResponse =
@@ -33,7 +34,9 @@ export type SaveCandidateResponse =
         | "invalid-hls-url"
         | "save-already-running"
         | "native-host-unavailable"
-        | "native-host-invalid-response";
+        | "native-host-invalid-response"
+        | "invalid-output-file-name"
+        | "output-file-exists";
     };
 
 export interface SaveCancelMessage {
@@ -70,6 +73,8 @@ export type SaveJobStatus =
         | "invalid-hls-url"
         | "native-host-unavailable"
         | "native-host-invalid-response"
+        | "invalid-output-file-name"
+        | "output-file-exists"
         | "invalid-request"
         | "ffmpeg-start-failed"
         | "ffmpeg-exit"
@@ -125,7 +130,9 @@ export function isSaveCandidateResponse(value: unknown): value is SaveCandidateR
       response.error === "invalid-hls-url" ||
       response.error === "save-already-running" ||
       response.error === "native-host-unavailable" ||
-      response.error === "native-host-invalid-response")
+      response.error === "native-host-invalid-response" ||
+      response.error === "invalid-output-file-name" ||
+      response.error === "output-file-exists")
   );
 }
 
@@ -188,6 +195,8 @@ function isSaveJobStatus(value: unknown): value is SaveJobStatus {
       job.error === "native-host-unavailable" ||
       job.error === "native-host-invalid-response" ||
       job.error === "invalid-request" ||
+      job.error === "invalid-output-file-name" ||
+      job.error === "output-file-exists" ||
       job.error === "ffmpeg-start-failed" ||
       job.error === "ffmpeg-exit" ||
       job.error === "internal-error") &&

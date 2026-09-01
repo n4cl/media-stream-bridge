@@ -6,6 +6,8 @@ import {
   createFfmpegSpawner,
   createOutputFileExists,
   isAllowedHlsUrl,
+  isAllowedOutputFileName,
+  MAX_OUTPUT_FILE_NAME_BYTES,
   startSaveStream,
 } from "../build/native-host/src/save-stream.js";
 
@@ -13,6 +15,92 @@ test("HostはHTTP(S) HLS URLだけを許可する", () => {
   assert.equal(isAllowedHlsUrl("https://example.com/master.m3u8?token=secret"), true);
   assert.equal(isAllowedHlsUrl("file:///tmp/master.m3u8"), false);
   assert.equal(isAllowedHlsUrl("https://example.com/video.mp4"), false);
+});
+
+test("Hostは保存ファイル名をbasenameのmp4へ制限する", () => {
+  assert.equal(isAllowedOutputFileName("episode-01.mp4"), true);
+  for (const value of [
+    "",
+    " episode.mp4",
+    "episode.mp4 ",
+    ".episode.mp4",
+    "dir/episode.mp4",
+    "dir\\episode.mp4",
+    "episode\u0001.mp4",
+    "episode.mkv",
+    `${"a".repeat(MAX_OUTPUT_FILE_NAME_BYTES)}.mp4`,
+  ]) {
+    assert.equal(isAllowedOutputFileName(value), false, value);
+  }
+});
+
+test("Hostは指定名へ排他的に公開してから途中ファイルを削除する", async () => {
+  const child = new EventEmitter();
+  const calls = [];
+  const started = await startSaveStream(
+    "https://example.com/master.m3u8",
+    {
+      makeDirectory: async () => {},
+      outputFileExists: async () => false,
+      removeFile: async (file) => calls.push(`remove:${file}`),
+      publishFile: async (temporaryFile, outputFile) =>
+        calls.push(`publish:${temporaryFile}:${outputFile}`),
+      spawnFfmpeg: (args) => {
+        calls.push(`spawn:${args.at(-1)}`);
+        return child;
+      },
+      createSaveId: () => "unique-id",
+      outputDirectory: "/safe/output",
+    },
+    "episode-01.mp4",
+  );
+  assert.equal(started.outputFile, "/safe/output/episode-01.mp4");
+  child.emit("close", 0);
+  await started.completed;
+  assert.deepEqual(calls, [
+    "spawn:/safe/output/.media-stream-unique-id.partial.mp4",
+    "publish:/safe/output/.media-stream-unique-id.partial.mp4:/safe/output/episode-01.mp4",
+    "remove:/safe/output/.media-stream-unique-id.partial.mp4",
+  ]);
+});
+
+test("Hostは公開失敗を同名競合と内部エラーに区別し、途中ファイルだけを後始末する", async () => {
+  const run = async (publishError, removeError) => {
+    const child = new EventEmitter();
+    const removed = [];
+    const started = await startSaveStream("https://example.com/master.m3u8", {
+      makeDirectory: async () => {},
+      outputFileExists: async () => false,
+      removeFile: async (file) => {
+        removed.push(file);
+        if (removeError) {
+          throw removeError;
+        }
+      },
+      publishFile: async () => {
+        throw publishError;
+      },
+      spawnFfmpeg: () => child,
+      createSaveId: () => "unique-id",
+      outputDirectory: "/safe/output",
+    });
+    child.emit("close", 0);
+    return { completed: started.completed, removed };
+  };
+
+  const existsError = new Error("exists");
+  existsError.code = "EEXIST";
+  const existing = await run(existsError);
+  await assert.rejects(existing.completed, { code: "output-file-exists" });
+  assert.deepEqual(existing.removed, ["/safe/output/.media-stream-unique-id.partial.mp4"]);
+
+  const failedPublish = await run(new Error("publish failed"));
+  await assert.rejects(failedPublish.completed, { code: "internal-error" });
+  assert.deepEqual(failedPublish.removed, ["/safe/output/.media-stream-unique-id.partial.mp4"]);
+
+  const failedCleanup = await run(new Error("publish failed"), new Error("cleanup failed"));
+  await assert.rejects(failedCleanup.completed, { code: "internal-error" });
+  assert.deepEqual(failedCleanup.removed, ["/safe/output/.media-stream-unique-id.partial.mp4"]);
 });
 
 test("Hostは固定したffmpeg引数と一意な出力名で保存を開始する", async () => {
@@ -25,6 +113,7 @@ test("Hostは固定したffmpeg引数と一意な出力名で保存を開始す�
     removeFile: async (file) => {
       removedOutputFile = file;
     },
+    publishFile: async () => {},
     spawnFfmpeg: (args) => {
       receivedArgs = args;
       return child;
@@ -40,11 +129,11 @@ test("Hostは固定したffmpeg引数と一意な出力名で保存を開始す�
     "-c",
     "copy",
     "-n",
-    "/safe/output/media-stream-unique-id.mp4",
+    "/safe/output/.media-stream-unique-id.partial.mp4",
   ]);
   child.emit("close", 0);
   await started.completed;
-  assert.equal(removedOutputFile, undefined);
+  assert.equal(removedOutputFile, "/safe/output/.media-stream-unique-id.partial.mp4");
 });
 
 test("Hostはインストーラが確定したffmpeg絶対パスをshellなしで起動する", () => {
@@ -71,14 +160,16 @@ test("Hostは出力ファイルの不存在だけを削除可能と判断する"
     error.code = "ENOENT";
     throw error;
   });
-  assert.equal(await missing("/safe/output/media-stream-unique-id.mp4"), false);
+  assert.equal(await missing("/safe/output/.media-stream-unique-id.partial.mp4"), false);
 
   const inaccessible = createOutputFileExists(async () => {
     const error = new Error("inaccessible");
     error.code = "EACCES";
     throw error;
   });
-  await assert.rejects(inaccessible("/safe/output/media-stream-unique-id.mp4"), { code: "EACCES" });
+  await assert.rejects(inaccessible("/safe/output/.media-stream-unique-id.partial.mp4"), {
+    code: "EACCES",
+  });
 });
 
 test("Hostは出力ファイルを確認できない場合にffmpegを起動しない", async () => {
@@ -127,7 +218,7 @@ test("Hostはffmpegの同期的な起動失敗後に出力ファイルを削除�
     "make-directory",
     "exists",
     "spawn",
-    "remove:/safe/output/media-stream-unique-id.mp4",
+    "remove:/safe/output/.media-stream-unique-id.partial.mp4",
   ]);
 });
 
@@ -144,6 +235,11 @@ test("Hostは非同期の失敗後に一度だけ後始末してから完了Prom
     removeFile: async () => {
       removeCount += 1;
       await cleanup;
+    },
+    publishFile: async () => {
+      const error = new Error("already exists");
+      error.code = "EEXIST";
+      throw error;
     },
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
@@ -175,6 +271,7 @@ test("Hostは非0終了後に出力ファイルを削除する", async () => {
     removeFile: async (file) => {
       removedOutputFile = file;
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
@@ -182,26 +279,31 @@ test("Hostは非0終了後に出力ファイルを削除する", async () => {
 
   child.emit("close", 1);
   await assert.rejects(started.completed, { code: "ffmpeg-exit" });
-  assert.equal(removedOutputFile, "/safe/output/media-stream-unique-id.mp4");
+  assert.equal(removedOutputFile, "/safe/output/.media-stream-unique-id.partial.mp4");
 });
 
-test("Hostは既存の同名出力ファイルを削除しない", async () => {
+test("Hostは同名競合で既存ファイルを上書きせず、今回の途中ファイルだけを削除する", async () => {
   const child = new EventEmitter();
-  let removeCount = 0;
+  const removed = [];
   const started = await startSaveStream("https://example.com/master.m3u8", {
     makeDirectory: async () => {},
-    outputFileExists: async () => true,
-    removeFile: async () => {
-      removeCount += 1;
+    outputFileExists: async () => false,
+    removeFile: async (file) => {
+      removed.push(file);
+    },
+    publishFile: async () => {
+      const error = new Error("already exists");
+      error.code = "EEXIST";
+      throw error;
     },
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
   });
 
-  child.emit("close", 1);
-  await assert.rejects(started.completed, { code: "ffmpeg-exit" });
-  assert.equal(removeCount, 0);
+  child.emit("close", 0);
+  await assert.rejects(started.completed, { code: "output-file-exists" });
+  assert.deepEqual(removed, ["/safe/output/.media-stream-unique-id.partial.mp4"]);
 });
 
 test("Hostは後始末に失敗した場合に内部エラーとして失敗させる", async () => {
@@ -212,6 +314,7 @@ test("Hostは後始末に失敗した場合に内部エラーとして失敗さ�
     removeFile: async () => {
       throw new Error("cannot remove");
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
@@ -240,6 +343,7 @@ test("Hostはキャンセル時にffmpeg終了と後始末の完了後にcancell
       removed.push(file);
       await cleanup;
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
@@ -248,7 +352,7 @@ test("Hostはキャンセル時にffmpeg終了と後始末の完了後にcancell
   assert.deepEqual(started.cancel(), { ok: true });
   assert.equal(killed, true);
   child.emit("close", null);
-  assert.deepEqual(removed, ["/safe/output/media-stream-unique-id.mp4"]);
+  assert.deepEqual(removed, ["/safe/output/.media-stream-unique-id.partial.mp4"]);
 
   let completed = false;
   void started.completed.then(() => {
@@ -274,6 +378,7 @@ test("Hostは終了要求中に非0終了してもキャンセルとして後始
     removeFile: async () => {
       cleanupCalls += 1;
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
@@ -294,6 +399,7 @@ test("Hostはキャンセルと正常終了が競合した場合に完成ファ�
     removeFile: async () => {
       removed = true;
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
@@ -302,7 +408,7 @@ test("Hostはキャンセルと正常終了が競合した場合に完成ファ�
   assert.deepEqual(started.cancel(), { ok: true });
   child.emit("close", 0);
   assert.equal(await started.completed, "completed");
-  assert.equal(removed, false);
+  assert.equal(removed, true);
 });
 
 test("Hostは終了要求に失敗した場合に途中ファイルを削除せず元の終了を待つ", async () => {
@@ -315,6 +421,7 @@ test("Hostは終了要求に失敗した場合に途中ファイルを削除せ�
     removeFile: async () => {
       removed = true;
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
@@ -324,7 +431,7 @@ test("Hostは終了要求に失敗した場合に途中ファイルを削除せ�
   assert.equal(removed, false);
   child.emit("close", 0);
   assert.equal(await started.completed, "completed");
-  assert.equal(removed, false);
+  assert.equal(removed, true);
 });
 
 test("Hostは終了要求が例外でも途中ファイルを削除せず元の終了を待つ", async () => {
@@ -339,6 +446,7 @@ test("Hostは終了要求が例外でも途中ファイルを削除せず元の�
     removeFile: async () => {
       removed = true;
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",
@@ -348,7 +456,7 @@ test("Hostは終了要求が例外でも途中ファイルを削除せず元の�
   assert.equal(removed, false);
   child.emit("close", 0);
   assert.equal(await started.completed, "completed");
-  assert.equal(removed, false);
+  assert.equal(removed, true);
 });
 
 test("Hostはキャンセル後のerror終端も一度だけ後始末する", async () => {
@@ -361,6 +469,7 @@ test("Hostはキャンセル後のerror終端も一度だけ後始末する", as
     removeFile: async () => {
       removeCount += 1;
     },
+    publishFile: async () => {},
     spawnFfmpeg: () => child,
     createSaveId: () => "unique-id",
     outputDirectory: "/safe/output",

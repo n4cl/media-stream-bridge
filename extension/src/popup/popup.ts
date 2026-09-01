@@ -30,6 +30,8 @@ const status = requireElement<HTMLParagraphElement>("#status");
 const form = requireElement<HTMLFormElement>("#candidate-form");
 const list = requireElement<HTMLDivElement>("#candidate-list");
 const saveButton = requireElement<HTMLButtonElement>("#save-button");
+const saveWithSettingsButton = requireElement<HTMLButtonElement>("#save-with-settings-button");
+const outputFileName = requireElement<HTMLInputElement>("#output-file-name");
 const cancelSaveButton = requireElement<HTMLButtonElement>("#cancel-save-button");
 const scheduler: TimerScheduler = {
   setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
@@ -47,6 +49,7 @@ function renderSaveStatus(job: SaveJobStatus | null): void {
     status.textContent = text;
   }
   saveButton.disabled = isActiveSaveJob(job);
+  saveWithSettingsButton.disabled = isActiveSaveJob(job);
   cancelSaveButton.hidden = cancellableSaveId(job) === null;
 }
 
@@ -168,14 +171,17 @@ form.addEventListener("submit", async (event) => {
   }
 
   saveButton.disabled = true;
+  saveWithSettingsButton.disabled = true;
   status.hidden = false;
   status.textContent = "保存を開始しています…";
   let keepSaveDisabled = false;
   try {
+    const isConfiguredSave = event.submitter === saveWithSettingsButton;
     const message: SaveCandidateMessage = {
       type: "save:start",
       tabId: currentTabId,
       hlsUrl: selected,
+      ...(isConfiguredSave ? { outputFileName: outputFileName.value } : {}),
     };
     const response: unknown = await browser.runtime.sendMessage(message);
     if (!isSaveCandidateResponse(response)) {
@@ -184,6 +190,10 @@ form.addEventListener("submit", async (event) => {
       status.textContent = "既に保存中です。";
       keepSaveDisabled = true;
       statusPoller.start();
+    } else if (!response.ok && response.error === "invalid-output-file-name") {
+      status.textContent = "ファイル名が無効です。.mp4 で終わる名前を入力してください。";
+    } else if (!response.ok && response.error === "output-file-exists") {
+      status.textContent = "同名のファイルが既にあります。別のファイル名を指定してください。";
     } else if (!response.ok) {
       status.textContent = "保存を開始できませんでした。Native Host の設定を確認してください。";
     } else if (response.response.type === "save:started") {
@@ -206,6 +216,7 @@ form.addEventListener("submit", async (event) => {
   } finally {
     if (!keepSaveDisabled) {
       saveButton.disabled = false;
+      saveWithSettingsButton.disabled = false;
     }
   }
 });

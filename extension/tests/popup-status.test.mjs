@@ -60,6 +60,14 @@ test("保存ジョブ状態をPopup向け文言へ変換する", () => {
     saveJobStatusText({ state: "failed", error: "ffmpeg-exit", saveId: "save-1" }),
     "保存に失敗しました。",
   );
+  assert.equal(
+    saveJobStatusText({ state: "failed", error: "invalid-output-file-name" }),
+    "ファイル名が無効です。.mp4 で終わる名前を入力してください。",
+  );
+  assert.equal(
+    saveJobStatusText({ state: "failed", error: "output-file-exists" }),
+    "同名のファイルが既にあります。別のファイル名を指定してください。",
+  );
 });
 
 test("キャンセル対象は実行中の保存だけに限定する", () => {

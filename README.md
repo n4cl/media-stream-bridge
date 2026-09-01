@@ -6,7 +6,7 @@ Firefoxで閲覧中のページが利用するストリーム配信を検出し�
 
 ## ステータス
 
-初期実装段階。閲覧中のタブで利用するHLSストリームを検出し、PopupからmacOSのNative Hostを通じて固定設定で保存できる。保存中、完了、失敗、キャンセルの状態と結果もPopupで確認できる。保存設定は後続で扱う。
+初期実装段階。閲覧中のタブで利用するHLSストリームを検出し、PopupからmacOSのNative Hostを通じて保存できる。保存中、完了、失敗、キャンセルの状態と結果もPopupで確認できる。「保存」は既定のランダムID付きファイル名を使い、「設定して保存」では今回に限り `.mp4` のファイル名を指定できる。保存先と画質の設定は後続で扱う。
 
 ## 解決したい問題
 
@@ -79,7 +79,7 @@ npm run build
 node scripts/install-native-host.mjs
 ```
 
-このスクリプトは `~/Library/Application Support/Mozilla/NativeMessagingHosts/` に、固定した拡張IDだけを許可する manifest を作成する。あわせて `~/Library/Application Support/Media Stream Bridge/` に、実行時の `PATH` に依存しないNode.jsとffmpegの絶対パスを固定したランチャーを生成する。Host は `~/Movies/Media Stream Bridge/` に、ランダムID付きの `.mp4` として保存する。既存ファイルの上書きはしない。登録後は拡張機能を再読み込みする。
+このスクリプトは `~/Library/Application Support/Mozilla/NativeMessagingHosts/` に、固定した拡張IDだけを許可する manifest を作成する。あわせて `~/Library/Application Support/Media Stream Bridge/` に、実行時の `PATH` に依存しないNode.jsとffmpegの絶対パスを固定したランチャーを生成する。Host は `~/Movies/Media Stream Bridge/` に保存する。通常の保存ではランダムID付きの `.mp4` を使い、設定して保存では単一の `.mp4` ファイル名を指定できる。指定名が無効または同名のファイルが既に存在する場合は保存せず、既存ファイルを上書きしない。登録後は拡張機能を再読み込みする。
 
 ## Firefox 開発起動
 
