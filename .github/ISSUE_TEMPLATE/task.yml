@@ -1,0 +1,56 @@
+name: 作業・機能提案
+description: 機能追加、改善、リファクタリング、文書更新などを提案する
+title: ""
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 解決したい問題や、この作業が必要になった理由を記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目的
+      description: このIssueによって実現したい結果を記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 対応範囲
+      description: 今回変更する対象や、検討が必要な範囲を記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 完了条件
+      description: 完了と判断できる、確認可能な条件を箇条書きで記載してください。
+      placeholder: |
+        - [ ] 条件1
+        - [ ] 条件2
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 対象外
+      description: 今回は対応しない内容があれば記載してください。
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: 検証方法
+      description: テストや手動確認など、想定している検証方法を記載してください。
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 補足
+      description: 関連Issue、参考資料、代替案などがあれば記載してください。
