@@ -1,0 +1,54 @@
+name: 不具合報告
+description: 再現可能な不具合や予期しない動作を報告する
+title: ""
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 発生している問題を簡潔に記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: 問題を再現できる操作を順番に記載してください。
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する結果
+      description: 本来どのようになるべきか記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の結果
+      description: 実際に起きたことを記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 実行環境
+      description: macOS、Firefox、Node.js、ffmpegなど、問題に関係するバージョンを記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ・補足
+      description: シークレットを除いたログ、画面表示、発生頻度、回避策などを記載してください。
+      render: shell
