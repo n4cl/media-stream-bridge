@@ -131,7 +131,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   assert.equal(connectNative, "com.media_stream_bridge");
   assert.equal(nativeConnectionCount, 1);
   assert.deepEqual(postedNativeMessage, {
-    version: 3,
+    version: 4,
     type: "save:start",
     hlsUrl: "https://example.com/master.m3u8",
   });
@@ -153,10 +153,10 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     job: { state: "starting" },
   });
   commitNavigation({ tabId: 7, frameId: 0, url: "https://example.com/after-save" });
-  nativeMessage({ version: 3, type: "save:started", saveId: "save-1" });
+  nativeMessage({ version: 4, type: "save:started", saveId: "save-1" });
   assert.deepEqual(await saving, {
     ok: true,
-    response: { version: 3, type: "save:started", saveId: "save-1" },
+    response: { version: 4, type: "save:started", saveId: "save-1" },
   });
   assert.equal(nativePorts[0].disconnectCalls, 0);
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 7 }), {
@@ -173,7 +173,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   );
   assert.equal(nativeConnectionCount, 1);
   nativeMessage({
-    version: 3,
+    version: 4,
     type: "save:completed",
     saveId: "save-1",
     outputFile: "/tmp/saved.mp4",
@@ -195,10 +195,10 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     tabId: 8,
     hlsUrl: "https://example.com/disconnected.m3u8",
   });
-  nativeMessage({ version: 3, type: "save:started", saveId: "save-2" });
+  nativeMessage({ version: 4, type: "save:started", saveId: "save-2" });
   assert.deepEqual(await disconnectedSave, {
     ok: true,
-    response: { version: 3, type: "save:started", saveId: "save-2" },
+    response: { version: 4, type: "save:started", saveId: "save-2" },
   });
   removeTab(8);
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 8 }), {
@@ -217,7 +217,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/out-of-order.m3u8",
   });
   nativeMessage({
-    version: 3,
+    version: 4,
     type: "save:completed",
     saveId: "save-3",
     outputFile: "/tmp/out-of-order.mp4",
@@ -233,13 +233,13 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     tabId: 10,
     hlsUrl: "https://example.com/mismatched-save-id.m3u8",
   });
-  nativeMessage({ version: 3, type: "save:started", saveId: "save-4" });
+  nativeMessage({ version: 4, type: "save:started", saveId: "save-4" });
   assert.deepEqual(await mismatchedCompletionSave, {
     ok: true,
-    response: { version: 3, type: "save:started", saveId: "save-4" },
+    response: { version: 4, type: "save:started", saveId: "save-4" },
   });
   nativeMessage({
-    version: 3,
+    version: 4,
     type: "save:completed",
     saveId: "other-save",
     outputFile: "/tmp/mismatched.mp4",
@@ -255,9 +255,9 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/first-attempt.m3u8",
   });
   const firstPort = nativePorts.at(-1);
-  firstPort.message({ version: 3, type: "save:started", saveId: "save-5" });
+  firstPort.message({ version: 4, type: "save:started", saveId: "save-5" });
   firstPort.message({
-    version: 3,
+    version: 4,
     type: "save:completed",
     saveId: "save-5",
     outputFile: "/tmp/first-attempt.mp4",
@@ -272,18 +272,18 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   const secondPort = nativePorts.at(-1);
   assert.notEqual(secondPort, firstPort);
   firstPort.disconnect();
-  firstPort.message({ version: 3, type: "save:started", saveId: "stale-save" });
+  firstPort.message({ version: 4, type: "save:started", saveId: "stale-save" });
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 11 }), {
     ok: true,
     job: { state: "starting" },
   });
-  secondPort.message({ version: 3, type: "save:started", saveId: "save-6" });
+  secondPort.message({ version: 4, type: "save:started", saveId: "save-6" });
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 11 }), {
     ok: true,
     job: { state: "running", saveId: "save-6" },
   });
   secondPort.message({
-    version: 3,
+    version: 4,
     type: "save:completed",
     saveId: "save-6",
     outputFile: "/tmp/second-attempt.mp4",
@@ -330,10 +330,10 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     ok: false,
     error: "save-not-running",
   });
-  startingCancelPort.message({ version: 3, type: "save:started", saveId: "save-14" });
+  startingCancelPort.message({ version: 4, type: "save:started", saveId: "save-14" });
   await startingCancel;
   startingCancelPort.message({
-    version: 3,
+    version: 4,
     type: "save:completed",
     saveId: "save-14",
     outputFile: "/tmp/started-after-cancel-rejection.mp4",
@@ -345,7 +345,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/cancellable.m3u8",
   });
   const cancellablePort = nativePorts.at(-1);
-  cancellablePort.message({ version: 3, type: "save:started", saveId: "save-7" });
+  cancellablePort.message({ version: 4, type: "save:started", saveId: "save-7" });
   await cancellableSave;
   assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 13, saveId: "other-save" }), {
     ok: false,
@@ -355,7 +355,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     ok: true,
   });
   assert.deepEqual(cancellablePort.postedMessage, {
-    version: 3,
+    version: 4,
     type: "save:cancel",
     saveId: "save-7",
   });
@@ -375,7 +375,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     ok: false,
     error: "save-not-running",
   });
-  cancellablePort.message({ version: 3, type: "save:cancelled", saveId: "save-7" });
+  cancellablePort.message({ version: 4, type: "save:cancelled", saveId: "save-7" });
   assert.equal(cancellablePort.disconnectCalls, 1);
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 13 }), {
     ok: true,
@@ -388,13 +388,13 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/rejected.m3u8",
   });
   const rejectedPort = nativePorts.at(-1);
-  rejectedPort.message({ version: 3, type: "save:started", saveId: "save-8" });
+  rejectedPort.message({ version: 4, type: "save:started", saveId: "save-8" });
   await rejectedSave;
   assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 14, saveId: "save-8" }), {
     ok: true,
   });
   rejectedPort.message({
-    version: 3,
+    version: 4,
     type: "save:cancel-rejected",
     saveId: "save-8",
     code: "cancel-failed",
@@ -412,7 +412,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     job: { state: "cancelling", saveId: "save-8" },
   });
   rejectedPort.message({
-    version: 3,
+    version: 4,
     type: "save:cancelled",
     saveId: "save-8",
   });
@@ -428,11 +428,11 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/completion-race.m3u8",
   });
   const completionRacePort = nativePorts.at(-1);
-  completionRacePort.message({ version: 3, type: "save:started", saveId: "save-9" });
+  completionRacePort.message({ version: 4, type: "save:started", saveId: "save-9" });
   await completionRace;
   await receiveMessage({ type: "save:cancel", tabId: 15, saveId: "save-9" });
   completionRacePort.message({
-    version: 3,
+    version: 4,
     type: "save:completed",
     saveId: "save-9",
     outputFile: "/tmp/completed-during-cancelling.mp4",
@@ -452,10 +452,10 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/failure-race.m3u8",
   });
   const failureRacePort = nativePorts.at(-1);
-  failureRacePort.message({ version: 3, type: "save:started", saveId: "save-10" });
+  failureRacePort.message({ version: 4, type: "save:started", saveId: "save-10" });
   await failureRace;
   await receiveMessage({ type: "save:cancel", tabId: 16, saveId: "save-10" });
-  failureRacePort.message({ version: 3, type: "save:failed", code: "ffmpeg-exit" });
+  failureRacePort.message({ version: 4, type: "save:failed", code: "ffmpeg-exit" });
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 16 }), {
     ok: true,
     job: { state: "failed", error: "ffmpeg-exit", saveId: "save-10" },
@@ -467,7 +467,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/cancel-post-throws.m3u8",
   });
   const postFailurePort = nativePorts.at(-1);
-  postFailurePort.message({ version: 3, type: "save:started", saveId: "save-11" });
+  postFailurePort.message({ version: 4, type: "save:started", saveId: "save-11" });
   await postFailureSave;
   throwPostMessage = true;
   assert.deepEqual(await receiveMessage({ type: "save:cancel", tabId: 17, saveId: "save-11" }), {
@@ -486,7 +486,7 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     hlsUrl: "https://example.com/disconnected-cancel.m3u8",
   });
   const disconnectedCancelPort = nativePorts.at(-1);
-  disconnectedCancelPort.message({ version: 3, type: "save:started", saveId: "save-12" });
+  disconnectedCancelPort.message({ version: 4, type: "save:started", saveId: "save-12" });
   await disconnectedCancel;
   await receiveMessage({ type: "save:cancel", tabId: 18, saveId: "save-12" });
   disconnectedCancelPort.disconnect();
@@ -500,12 +500,12 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
     tabId: 13,
     hlsUrl: "https://example.com/replacement.m3u8",
   });
-  cancellablePort.message({ version: 3, type: "save:cancelled", saveId: "save-7" });
+  cancellablePort.message({ version: 4, type: "save:cancelled", saveId: "save-7" });
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 13 }), {
     ok: true,
     job: { state: "starting" },
   });
-  nativePorts.at(-1).message({ version: 3, type: "save:started", saveId: "save-13" });
+  nativePorts.at(-1).message({ version: 4, type: "save:started", saveId: "save-13" });
   await replacementSave;
 
   const configuredSave = receiveMessage({
@@ -516,14 +516,14 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   });
   const configuredPort = nativePorts.at(-1);
   assert.deepEqual(configuredPort.postedMessage, {
-    version: 3,
+    version: 4,
     type: "save:start",
     hlsUrl: "https://example.com/configured.m3u8",
     outputFileName: "episode-01.mp4",
   });
-  configuredPort.message({ version: 3, type: "save:started", saveId: "save-20" });
+  configuredPort.message({ version: 4, type: "save:started", saveId: "save-20" });
   await configuredSave;
-  configuredPort.message({ version: 3, type: "save:failed", code: "output-file-exists" });
+  configuredPort.message({ version: 4, type: "save:failed", code: "output-file-exists" });
   assert.deepEqual(await receiveMessage({ type: "save:status", tabId: 20 }), {
     ok: true,
     job: { state: "failed", error: "output-file-exists", saveId: "save-20" },
@@ -553,15 +553,15 @@ test("通信で検出したHLS候補をPopup向けメッセージへ返す", asy
   });
   const configuredDestinationPort = nativePorts.at(-1);
   assert.deepEqual(configuredDestinationPort.postedMessage, {
-    version: 3,
+    version: 4,
     type: "save:start",
     hlsUrl: "https://example.com/configured-destination.m3u8",
     destination: "downloads",
   });
-  configuredDestinationPort.message({ version: 3, type: "save:started", saveId: "save-22" });
+  configuredDestinationPort.message({ version: 4, type: "save:started", saveId: "save-22" });
   await configuredDestinationSave;
   configuredDestinationPort.message({
-    version: 3,
+    version: 4,
     type: "save:failed",
     code: "output-directory-unavailable",
   });

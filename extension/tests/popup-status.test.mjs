@@ -62,7 +62,7 @@ test("保存ジョブ状態をPopup向け文言へ変換する", () => {
   );
   assert.equal(
     saveJobStatusText({ state: "failed", error: "invalid-output-file-name" }),
-    "ファイル名が無効です。.mp4 で終わる名前を入力してください。",
+    "ファイル名が無効です。名前の前後の空白や使用できない文字を確認してください。",
   );
   assert.equal(
     saveJobStatusText({ state: "failed", error: "output-file-exists" }),

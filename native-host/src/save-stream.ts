@@ -148,18 +148,22 @@ function hasControlCharacter(value: string): boolean {
 }
 
 export function isAllowedOutputFileName(value: string): boolean {
-  const byteLength = Buffer.byteLength(value, "utf8");
+  const normalizedValue = normalizeOutputFileName(value);
+  const byteLength = Buffer.byteLength(normalizedValue, "utf8");
   return (
     value.length > 0 &&
     byteLength <= MAX_OUTPUT_FILE_NAME_BYTES &&
     value.trim() === value &&
     !value.startsWith(".") &&
-    value.toLowerCase().endsWith(".mp4") &&
     !value.includes("/") &&
     !value.includes("\\") &&
     !hasControlCharacter(value) &&
     !isAbsolute(value)
   );
+}
+
+export function normalizeOutputFileName(value: string): string {
+  return value.toLowerCase().endsWith(".mp4") ? value : `${value}.mp4`;
 }
 
 export interface StartedSave {
@@ -200,12 +204,17 @@ export async function startSaveStream(
     throw new SaveStreamError("invalid-save-destination", "invalid save destination");
   }
   const outputDirectory =
-    dependencies.outputDirectoryForDestination?.(destination ?? "movies") ??
+    dependencies.outputDirectoryForDestination?.(destination ?? "downloads") ??
     dependencies.outputDirectory;
   if (outputDirectory === undefined) {
     throw new SaveStreamError("internal-error", "output directory is not configured");
   }
-  const outputFile = join(outputDirectory, outputFileName ?? `media-stream-${saveId}.mp4`);
+  const outputFile = join(
+    outputDirectory,
+    outputFileName === undefined
+      ? `media-stream-${saveId}.mp4`
+      : normalizeOutputFileName(outputFileName),
+  );
   const temporaryFile = join(outputDirectory, `.media-stream-${saveId}.partial.mp4`);
   try {
     await dependencies.makeDirectory(outputDirectory);

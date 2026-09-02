@@ -1,4 +1,4 @@
-export const NATIVE_MESSAGE_VERSION = 3;
+export const NATIVE_MESSAGE_VERSION = 4;
 
 export type SaveDestination = "movies" | "downloads";
 

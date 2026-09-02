@@ -194,7 +194,8 @@ form.addEventListener("submit", async (event) => {
       keepSaveDisabled = true;
       statusPoller.start();
     } else if (!response.ok && response.error === "invalid-output-file-name") {
-      status.textContent = "ファイル名が無効です。.mp4 で終わる名前を入力してください。";
+      status.textContent =
+        "ファイル名が無効です。名前の前後の空白や使用できない文字を確認してください。";
     } else if (!response.ok && response.error === "output-file-exists") {
       status.textContent = "同名のファイルが既にあります。別のファイル名を指定してください。";
     } else if (!response.ok && response.error === "invalid-save-destination") {

@@ -19,16 +19,17 @@ test("Native Host契約はバージョン付きの保存開始要求だけを受
     true,
   );
   assert.equal(
-    isSaveStreamRequest({ version: 2, type: "save:start", hlsUrl: "https://example.com/a.m3u8" }),
+    isSaveStreamRequest({ version: 3, type: "save:start", hlsUrl: "https://example.com/a.m3u8" }),
     false,
   );
+  assert.equal(isNativeHostResponse({ version: 3, type: "save:started", saveId: "id" }), false);
   assert.equal(
     isSaveStreamRequest({ version: NATIVE_MESSAGE_VERSION, type: "save:start", hlsUrl: 1 }),
     false,
   );
   assert.equal(
     isSaveStreamRequest({
-      version: 3,
+      version: 4,
       type: "save:start",
       hlsUrl: "https://example.com/a.m3u8",
       outputFileName: "episode-01.mp4",
@@ -37,7 +38,7 @@ test("Native Host契約はバージョン付きの保存開始要求だけを受
   );
   assert.equal(
     isSaveStreamRequest({
-      version: 3,
+      version: 4,
       type: "save:start",
       hlsUrl: "https://example.com/a.m3u8",
       destination: "downloads",
@@ -46,7 +47,7 @@ test("Native Host契約はバージョン付きの保存開始要求だけを受
   );
   assert.equal(
     isSaveStreamRequest({
-      version: 3,
+      version: 4,
       type: "save:start",
       hlsUrl: "https://example.com/a.m3u8",
       destination: "elsewhere",
@@ -55,7 +56,7 @@ test("Native Host契約はバージョン付きの保存開始要求だけを受
   );
   assert.equal(
     isSaveStreamRequest({
-      version: 3,
+      version: 4,
       type: "save:start",
       hlsUrl: "https://example.com/a.m3u8",
       outputFileName: 1,
@@ -77,19 +78,19 @@ test("Native Host契約は保存ID付きのキャンセル要求を検証する"
     isSaveCancelRequest({ version: NATIVE_MESSAGE_VERSION, type: "save:cancel", saveId: "id" }),
     true,
   );
-  assert.equal(isSaveCancelRequest({ version: 3, type: "save:cancel", saveId: "" }), false);
+  assert.equal(isSaveCancelRequest({ version: 4, type: "save:cancel", saveId: "" }), false);
   assert.equal(
-    isNativeHostRequest({ version: 3, type: "save:start", hlsUrl: "https://a/b.m3u8" }),
+    isNativeHostRequest({ version: 4, type: "save:start", hlsUrl: "https://a/b.m3u8" }),
     true,
   );
-  assert.equal(isNativeHostRequest({ version: 3, type: "save:cancel", saveId: "id" }), true);
+  assert.equal(isNativeHostRequest({ version: 4, type: "save:cancel", saveId: "id" }), true);
 });
 
 test("Native Host契約は開始、完了、構造化失敗レスポンスを検証する", () => {
-  assert.equal(isNativeHostResponse({ version: 3, type: "save:started", saveId: "id" }), true);
+  assert.equal(isNativeHostResponse({ version: 4, type: "save:started", saveId: "id" }), true);
   assert.equal(
     isNativeHostResponse({
-      version: 3,
+      version: 4,
       type: "save:completed",
       saveId: "id",
       outputFile: "/tmp/a.mp4",
@@ -97,34 +98,34 @@ test("Native Host契約は開始、完了、構造化失敗レスポンスを検
     true,
   );
   assert.equal(
-    isNativeHostResponse({ version: 3, type: "save:failed", code: "ffmpeg-exit" }),
+    isNativeHostResponse({ version: 4, type: "save:failed", code: "ffmpeg-exit" }),
     true,
   );
-  assert.equal(isNativeHostResponse({ version: 3, type: "save:cancelled", saveId: "id" }), true);
+  assert.equal(isNativeHostResponse({ version: 4, type: "save:cancelled", saveId: "id" }), true);
   assert.equal(
     isNativeHostResponse({
-      version: 3,
+      version: 4,
       type: "save:cancel-rejected",
       saveId: "other-id",
       code: "save-id-mismatch",
     }),
     true,
   );
-  assert.equal(isNativeHostResponse({ version: 3, type: "save:failed", code: "unknown" }), false);
+  assert.equal(isNativeHostResponse({ version: 4, type: "save:failed", code: "unknown" }), false);
   assert.equal(
-    isNativeHostResponse({ version: 3, type: "save:failed", code: "invalid-output-file-name" }),
+    isNativeHostResponse({ version: 4, type: "save:failed", code: "invalid-output-file-name" }),
     true,
   );
   assert.equal(
-    isNativeHostResponse({ version: 3, type: "save:failed", code: "output-file-exists" }),
+    isNativeHostResponse({ version: 4, type: "save:failed", code: "output-file-exists" }),
     true,
   );
   assert.equal(
-    isNativeHostResponse({ version: 3, type: "save:failed", code: "invalid-save-destination" }),
+    isNativeHostResponse({ version: 4, type: "save:failed", code: "invalid-save-destination" }),
     true,
   );
   assert.equal(
-    isNativeHostResponse({ version: 3, type: "save:failed", code: "output-directory-unavailable" }),
+    isNativeHostResponse({ version: 4, type: "save:failed", code: "output-directory-unavailable" }),
     true,
   );
 });

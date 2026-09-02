@@ -24,6 +24,19 @@ test("通常保存では設定項目を送らず、設定して保存では保�
   );
   assert.deepEqual(
     createSaveRequest(1, "https://example.com/master.m3u8", {
+      outputFileName: "test",
+      destination: "downloads",
+    }),
+    {
+      type: "save:start",
+      tabId: 1,
+      hlsUrl: "https://example.com/master.m3u8",
+      outputFileName: "test",
+      destination: "downloads",
+    },
+  );
+  assert.deepEqual(
+    createSaveRequest(1, "https://example.com/master.m3u8", {
       outputFileName: " episode.mp4 ",
       destination: "movies",
     }),
@@ -38,13 +51,13 @@ test("通常保存では設定項目を送らず、設定して保存では保�
   assert.deepEqual(
     createSaveRequest(1, "https://example.com/master.m3u8", {
       outputFileName: "",
-      destination: "movies",
+      destination: "downloads",
     }),
     {
       type: "save:start",
       tabId: 1,
       hlsUrl: "https://example.com/master.m3u8",
-      destination: "movies",
+      destination: "downloads",
     },
   );
 });

@@ -37,7 +37,7 @@ export function saveJobStatusText(job: SaveJobStatus | null): string | null {
     return "保存をキャンセルしました。";
   }
   if (job.error === "invalid-output-file-name") {
-    return "ファイル名が無効です。.mp4 で終わる名前を入力してください。";
+    return "ファイル名が無効です。名前の前後の空白や使用できない文字を確認してください。";
   }
   if (job.error === "output-file-exists") {
     return "同名のファイルが既にあります。別のファイル名を指定してください。";

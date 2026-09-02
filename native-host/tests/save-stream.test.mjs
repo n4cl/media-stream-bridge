@@ -11,6 +11,7 @@ import {
   isAllowedOutputFileName,
   isAllowedSaveDestination,
   MAX_OUTPUT_FILE_NAME_BYTES,
+  normalizeOutputFileName,
   resolveOutputDirectory,
   startSaveStream,
 } from "../build/native-host/src/save-stream.js";
@@ -21,8 +22,13 @@ test("HostはHTTP(S) HLS URLだけを許可する", () => {
   assert.equal(isAllowedHlsUrl("https://example.com/video.mp4"), false);
 });
 
-test("Hostは保存ファイル名をbasenameのmp4へ制限する", () => {
+test("Hostは入力名をmp4のbasenameへ正規化して制限する", () => {
+  assert.equal(normalizeOutputFileName("episode-01"), "episode-01.mp4");
+  assert.equal(normalizeOutputFileName("episode-01.mp4"), "episode-01.mp4");
+  assert.equal(normalizeOutputFileName("episode.mkv"), "episode.mkv.mp4");
+  assert.equal(isAllowedOutputFileName("episode-01"), true);
   assert.equal(isAllowedOutputFileName("episode-01.mp4"), true);
+  assert.equal(isAllowedOutputFileName("episode.mkv"), true);
   for (const value of [
     "",
     " episode.mp4",
@@ -31,8 +37,8 @@ test("Hostは保存ファイル名をbasenameのmp4へ制限する", () => {
     "dir/episode.mp4",
     "dir\\episode.mp4",
     "episode\u0001.mp4",
-    "episode.mkv",
     `${"a".repeat(MAX_OUTPUT_FILE_NAME_BYTES)}.mp4`,
+    "a".repeat(MAX_OUTPUT_FILE_NAME_BYTES),
   ]) {
     assert.equal(isAllowedOutputFileName(value), false, value);
   }
@@ -144,6 +150,44 @@ test("Hostは未知の保存先をffmpeg起動前に拒否する", async () => {
     { code: "invalid-save-destination" },
   );
   assert.equal(spawned, false);
+});
+
+test("Hostは入力名へmp4を付与し、未指定時はDownloadsを使う", async () => {
+  const destinations = [];
+  const dependencies = {
+    makeDirectory: async () => {},
+    outputFileExists: async () => false,
+    removeFile: async () => {},
+    publishFile: async () => {},
+    spawnFfmpeg: () => new EventEmitter(),
+    createSaveId: () => "unique-id",
+    outputDirectoryForDestination: (destination) => {
+      destinations.push(destination);
+      return `/safe/${destination}`;
+    },
+  };
+  const hlsUrl = "https://example.com/master.m3u8";
+  assert.equal(
+    (await startSaveStream(hlsUrl, dependencies, "test")).outputFile,
+    "/safe/downloads/test.mp4",
+  );
+  assert.equal(
+    (await startSaveStream(hlsUrl, dependencies, "test.mp4")).outputFile,
+    "/safe/downloads/test.mp4",
+  );
+  assert.equal(
+    (await startSaveStream(hlsUrl, dependencies, "foo.mkv")).outputFile,
+    "/safe/downloads/foo.mkv.mp4",
+  );
+  assert.equal(
+    (await startSaveStream(hlsUrl, dependencies)).outputFile,
+    "/safe/downloads/media-stream-unique-id.mp4",
+  );
+  assert.equal(
+    (await startSaveStream(hlsUrl, dependencies, undefined, "movies")).outputFile,
+    "/safe/movies/media-stream-unique-id.mp4",
+  );
+  assert.deepEqual(destinations, ["downloads", "downloads", "downloads", "downloads", "movies"]);
 });
 
 test("Hostは指定名へ排他的に公開してから途中ファイルを削除する", async () => {
