@@ -14,6 +14,7 @@ import {
   type SaveJobStatus,
   type SaveStatusResponse,
 } from "../shared/messages.js";
+import { createNativeSaveStartRequest } from "./native-save-request.js";
 
 const candidates = new CandidateStore();
 interface SaveJobAttempt {
@@ -169,13 +170,7 @@ function saveWithNativeHost(
       settle({ ok: false, error: "native-host-unavailable" });
     });
     try {
-      port.postMessage({
-        version: NATIVE_MESSAGE_VERSION,
-        type: "save:start",
-        hlsUrl,
-        ...(outputFileName === undefined ? {} : { outputFileName }),
-        ...(destination === undefined ? {} : { destination }),
-      });
+      port.postMessage(createNativeSaveStartRequest(hlsUrl, outputFileName, destination));
     } catch {
       failAttemptUnlessTerminal(tabId, attempt, "native-host-unavailable");
       settle({ ok: false, error: "native-host-unavailable" });

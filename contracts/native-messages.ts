@@ -1,4 +1,7 @@
 export const NATIVE_MESSAGE_VERSION = 4;
+// macOS allows a 255-byte path component. Leave room below that limit so the
+// same contract remains usable on filesystems with a slightly smaller limit.
+export const MAX_OUTPUT_FILE_NAME_BYTES = 240;
 
 export type SaveDestination = "movies" | "downloads";
 

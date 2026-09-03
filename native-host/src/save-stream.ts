@@ -5,7 +5,12 @@ import { access, link, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-import type { SaveDestination } from "../../contracts/native-messages.js";
+import {
+  MAX_OUTPUT_FILE_NAME_BYTES,
+  type SaveDestination,
+} from "../../contracts/native-messages.js";
+
+export { MAX_OUTPUT_FILE_NAME_BYTES };
 
 export interface SpawnedProcess {
   once(event: "error", listener: () => void): ChildProcess;
@@ -135,10 +140,6 @@ export function isAllowedHlsUrl(value: string): boolean {
     return false;
   }
 }
-
-// macOS allows a 255-byte path component. Leave room below that limit so the
-// same contract remains usable on filesystems with a slightly smaller limit.
-export const MAX_OUTPUT_FILE_NAME_BYTES = 240;
 
 function hasControlCharacter(value: string): boolean {
   return Array.from(value).some((character) => {
