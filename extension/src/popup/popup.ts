@@ -9,6 +9,7 @@ import {
   type SaveJobStatus,
   type SaveStatusMessage,
 } from "../shared/messages.js";
+import { createDefaultOutputFileName } from "./default-output-file-name.js";
 import { createSaveRequest } from "./save-request.js";
 import {
   cancellableSaveId,
@@ -41,6 +42,7 @@ const scheduler: TimerScheduler = {
 };
 
 let currentTabId: number | undefined;
+let currentPageTitle: string | undefined;
 let currentSaveJob: SaveJobStatus | null = null;
 
 function renderSaveStatus(job: SaveJobStatus | null): void {
@@ -116,9 +118,12 @@ function renderCandidates(candidates: Array<{ url: string }>): void {
   }
 }
 
-async function resolveCurrentTabId(): Promise<number | undefined> {
+async function resolveCurrentTab(): Promise<{ id: number; title?: string } | undefined> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  return typeof tab?.id === "number" && Number.isInteger(tab.id) ? tab.id : undefined;
+  if (typeof tab?.id !== "number" || !Number.isInteger(tab.id)) {
+    return undefined;
+  }
+  return typeof tab.title === "string" ? { id: tab.id, title: tab.title } : { id: tab.id };
 }
 
 async function loadCandidates(tabId: number): Promise<void> {
@@ -145,14 +150,18 @@ async function loadCandidates(tabId: number): Promise<void> {
 
 async function initialize(): Promise<void> {
   try {
-    currentTabId = await resolveCurrentTabId();
+    const currentTab = await resolveCurrentTab();
+    currentTabId = currentTab?.id;
+    currentPageTitle = currentTab?.title;
   } catch {
     currentTabId = undefined;
+    currentPageTitle = undefined;
   }
   if (currentTabId === undefined) {
     candidateStatus.textContent = "現在のタブを確認できませんでした。";
     return;
   }
+  outputFileName.value = createDefaultOutputFileName(currentPageTitle) ?? "";
   statusPoller.start();
   await loadCandidates(currentTabId);
 }
@@ -179,12 +188,12 @@ form.addEventListener("submit", async (event) => {
   let keepSaveDisabled = false;
   try {
     const isConfiguredSave = event.submitter === saveWithSettingsButton;
+    const defaultOutputFileName = createDefaultOutputFileName(currentPageTitle);
     const message: SaveCandidateMessage = createSaveRequest(
       currentTabId,
       selected,
-      isConfiguredSave
-        ? { outputFileName: outputFileName.value, destination: destination.value }
-        : undefined,
+      isConfiguredSave ? outputFileName.value : defaultOutputFileName,
+      isConfiguredSave ? destination.value : undefined,
     );
     const response: unknown = await browser.runtime.sendMessage(message);
     if (!isSaveCandidateResponse(response)) {
